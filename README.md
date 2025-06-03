@@ -37,8 +37,30 @@ This demo illustrates the complete flow from Vault secrets to web UI:
 - **Kubernetes/OpenShift cluster**
 - **HashiCorp Vault** with KV-v2 secrets engine
 - **Vault Secrets Operator (VSO)** installed in cluster
+- **Vault Kubernetes Auth** method configured
 - **Docker** (for local development)
 - **Node.js 18+** (for local development)
+
+### Vault Configuration Requirements
+
+Before deploying, ensure Vault is configured with:
+
+1. **KV-v2 secrets engine** mounted at `secret/`
+2. **Kubernetes auth method** enabled
+3. **Vault role** created for the application:
+   ```bash
+   vault write auth/kubernetes/role/vault-secrets-web-demo \
+     bound_service_account_names=vault-auth \
+     bound_service_account_namespaces=vault-secrets-web-demo \
+     policies=vault-secrets-web-demo-policy \
+     ttl=24h
+   ```
+4. **Vault policy** with access to secrets:
+   ```hcl
+   path "secret/data/web/*" {
+     capabilities = ["read"]
+   }
+   ```
 
 ## 🛠️ Quick Start
 
@@ -86,23 +108,24 @@ This demo illustrates the complete flow from Vault secrets to web UI:
 
 ### Kubernetes Deployment
 
-1. **Create namespace**:
-   ```bash
-   kubectl apply -f k8s-manifests/namespace.yaml
-   ```
+> **Note**: For production deployments, Kubernetes manifests are maintained in a separate infrastructure repository using GitOps practices.
 
-2. **Configure Vault connection** (update `k8s-manifests/vault-static-secret.yaml`):
-   ```yaml
-   spec:
-     vaultConnectionRef: your-vault-connection
-     mount: your-secrets-mount
-     path: your-secret-path
-   ```
+If you want to deploy this application to Kubernetes/OpenShift, you'll need:
 
-3. **Deploy application**:
-   ```bash
-   kubectl apply -f k8s-manifests/
-   ```
+1. **Vault Infrastructure**:
+   - VaultConnection (pointing to your Vault server)
+   - VaultAuth (Kubernetes authentication method)
+   - ServiceAccount with proper RBAC permissions
+
+2. **Secret Synchronization**:
+   - VaultStaticSecret (syncs secrets from Vault to Kubernetes)
+
+3. **Application Deployment**:
+   - Deployment (with volume mounts for secrets)
+   - Service (exposes the application)
+   - Route/Ingress (for external access)
+
+For a complete example of these manifests, see the infrastructure repository or contact your platform team.
 
 ## 📁 Project Structure
 
@@ -116,16 +139,12 @@ vault-secrets-web-demo/
 │       └── package.json   # Frontend dependencies
 ├── docker/
 │   └── Dockerfile         # Multi-stage container build
-├── k8s-manifests/         # Kubernetes deployment files
-│   ├── deployment.yaml    # Application deployment
-│   ├── service.yaml       # Kubernetes service
-│   ├── route.yaml         # OpenShift route (optional)
-│   ├── namespace.yaml     # Namespace definition
-│   └── vault-static-secret.yaml # VSO secret sync
 └── scripts/               # Utility scripts
     ├── build.sh          # Docker build script
     └── setup-dev.sh      # Development setup
 ```
+
+> **Note**: Kubernetes deployment manifests are maintained separately in the infrastructure repository for proper GitOps practices.
 
 ## 🔧 Configuration
 
@@ -147,9 +166,10 @@ The application expects secrets to be mounted at `/app/secrets` with the followi
 
 ### Kubernetes Secrets
 
-VSO will create a Kubernetes secret that gets mounted to the pod. Update the `vault-static-secret.yaml` to match your Vault configuration:
+VSO will create a Kubernetes secret that gets mounted to the pod. The secret configuration is managed in the infrastructure repository with the following structure:
 
 ```yaml
+# Example VaultStaticSecret configuration
 spec:
   vaultConnectionRef: your-vault-connection
   mount: secret              # Your Vault mount point
@@ -195,6 +215,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Verify VSO is running and configured correctly
 - Check vault-static-secret resource status: `kubectl describe vaultstaticsecret vault-web-secrets`
 - Ensure proper RBAC permissions for VSO
+- Contact your platform team if using managed infrastructure
 
 **WebSocket connection failed**:
 - Check if port 3000 is accessible
@@ -202,9 +223,10 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Check browser console for connection errors
 
 **Container won't start**:
-- Verify secrets are properly mounted
+- Verify secrets are properly mounted at `/secrets`
 - Check container logs: `kubectl logs deployment/vault-secrets-web-demo`
 - Ensure sufficient resources are allocated
+- Verify the secrets directory is mounted read-only
 
 ### Debug Mode
 

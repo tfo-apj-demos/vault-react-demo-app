@@ -77,9 +77,6 @@ logs
 # Test secrets directory
 /tmp/vault-secrets-demo/
 
-# Generated Kubernetes manifests
-k8s-manifests/
-
 # Local .terraform directories
 .terraform/
 
