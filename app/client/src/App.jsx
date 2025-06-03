@@ -11,6 +11,16 @@ function App() {
     const saved = localStorage.getItem('darkMode');
     return saved ? JSON.parse(saved) : false;
   });
+  
+  // New state for modern features
+  const [metrics, setMetrics] = useState({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [notifications, setNotifications] = useState([]);
+  const [selectedSecret, setSelectedSecret] = useState(null);
+  const [showMetrics, setShowMetrics] = useState(false);
+  const [filteredSecrets, setFilteredSecrets] = useState({});
+  const [secretFormat, setSecretFormat] = useState({});
+  const [showExportModal, setShowExportModal] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('darkMode', JSON.stringify(darkMode));
@@ -20,6 +30,53 @@ function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [darkMode]);
+
+  // Filter secrets based on search query
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredSecrets(secrets);
+    } else {
+      const filtered = {};
+      const query = searchQuery.toLowerCase();
+      
+      Object.entries(secrets).forEach(([filename, data]) => {
+        if (filename.toLowerCase().includes(query) || 
+            data.content.toLowerCase().includes(query)) {
+          filtered[filename] = data;
+        }
+      });
+      
+      setFilteredSecrets(filtered);
+    }
+  }, [secrets, searchQuery]);
+
+  // Fetch metrics periodically
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      try {
+        const response = await fetch('/api/metrics');
+        const data = await response.json();
+        setMetrics(data);
+      } catch (err) {
+        console.error('Failed to fetch metrics:', err);
+      }
+    };
+
+    fetchMetrics(); // Initial fetch
+    const interval = setInterval(fetchMetrics, 30000); // Every 30s
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-remove notifications
+  useEffect(() => {
+    notifications.forEach(notification => {
+      if (notification.id) {
+        setTimeout(() => {
+          setNotifications(prev => prev.filter(n => n.id !== notification.id));
+        }, 5000);
+      }
+    });
+  }, [notifications]);
 
   useEffect(() => {
     const socket = io();
@@ -39,6 +96,15 @@ function App() {
       console.log('Secrets update received:', data);
       setSecrets(data.secrets);
       setLastUpdate(data.timestamp);
+      
+      // Add notification for secret changes
+      if (data.action && data.file) {
+        addNotification({
+          type: data.action === 'add' ? 'success' : data.action === 'change' ? 'info' : 'warning',
+          message: `Secret "${data.file}" was ${data.action === 'add' ? 'added' : data.action === 'change' ? 'updated' : 'removed'}`,
+          timestamp: data.timestamp
+        });
+      }
       
       // Add to activity log
       const activityEntry = {
@@ -69,10 +135,119 @@ function App() {
         setError(err.message);
       });
 
+    // Fetch initial activity history
+    fetch('/api/activity')
+      .then(res => res.json())
+      .then(data => {
+        if (data.activity) {
+          setActivity(data.activity);
+        }
+      })
+      .catch(err => {
+        console.error('Failed to fetch initial activity:', err);
+      });
+
     return () => {
       socket.disconnect();
     };
   }, []);
+
+  // Helper functions
+  const addNotification = (notification) => {
+    const id = Date.now() + Math.random();
+    setNotifications(prev => [...prev, { ...notification, id }]);
+  };
+
+  const validateSecretFormat = (content, filename) => {
+    const ext = filename.split('.').pop()?.toLowerCase();
+    
+    try {
+      switch (ext) {
+        case 'json':
+          JSON.parse(content);
+          return { valid: true, format: 'JSON', icon: '📋' };
+        case 'yaml':
+        case 'yml':
+          // Basic YAML validation
+          if (content.includes('---') || content.includes(':')) {
+            return { valid: true, format: 'YAML', icon: '📄' };
+          }
+          return { valid: false, format: 'YAML', icon: '⚠️' };
+        case 'env':
+          // ENV file validation
+          const lines = content.split('\n').filter(line => line.trim());
+          const validEnv = lines.every(line => 
+            line.startsWith('#') || line.includes('=') || line.trim() === ''
+          );
+          return { valid: validEnv, format: 'ENV', icon: '🔧' };
+        case 'txt':
+          return { valid: true, format: 'Text', icon: '📝' };
+        case 'pem':
+        case 'key':
+        case 'crt':
+          return { valid: true, format: 'Certificate/Key', icon: '🔐' };
+        default:
+          // JWT token detection
+          if (content.startsWith('eyJ') && content.split('.').length === 3) {
+            return { valid: true, format: 'JWT Token', icon: '🎫' };
+          }
+          return { valid: true, format: 'Unknown', icon: '📄' };
+      }
+    } catch (e) {
+      return { valid: false, format: ext?.toUpperCase() || 'Unknown', icon: '⚠️' };
+    }
+  };
+
+  const exportSecrets = (format = 'json') => {
+    const timestamp = new Date().toISOString().split('T')[0];
+    let content, filename, mimeType;
+
+    switch (format) {
+      case 'json':
+        content = JSON.stringify(secrets, null, 2);
+        filename = `vault-secrets-${timestamp}.json`;
+        mimeType = 'application/json';
+        break;
+      case 'yaml':
+        // Simple YAML export
+        content = Object.entries(secrets).map(([name, data]) => 
+          `# ${name}\n${name}:\n  content: |\n    ${data.content.split('\n').join('\n    ')}\n  size: ${data.size}\n  lastModified: ${data.lastModified}\n`
+        ).join('\n');
+        filename = `vault-secrets-${timestamp}.yaml`;
+        mimeType = 'text/yaml';
+        break;
+      case 'csv':
+        const csvRows = [
+          ['Filename', 'Size', 'Last Modified', 'Content Preview'],
+          ...Object.entries(secrets).map(([name, data]) => [
+            name,
+            data.size,
+            new Date(data.lastModified).toLocaleString(),
+            data.content.substring(0, 100) + (data.content.length > 100 ? '...' : '')
+          ])
+        ];
+        content = csvRows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+        filename = `vault-secrets-${timestamp}.csv`;
+        mimeType = 'text/csv';
+        break;
+    }
+
+    const blob = new Blob([content], { type: mimeType });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+
+    addNotification({
+      type: 'success',
+      message: `Exported ${Object.keys(secrets).length} secrets as ${format.toUpperCase()}`,
+      timestamp: new Date().toISOString()
+    });
+  };
 
   const formatTimestamp = (timestamp) => {
     return new Date(timestamp).toLocaleTimeString();
@@ -115,12 +290,53 @@ function App() {
                   Vault Secrets Demo
                 </h1>
               </div>
-              <div className="hidden sm:block text-sm text-gray-500 dark:text-gray-400">
-                Vault → VSO → Kubernetes → Web UI
+              
+              {/* Search Bar */}
+              <div className="hidden md:block">
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <span className="text-gray-400">🔍</span>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search secrets..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="block w-64 pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md leading-5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
             
             <div className="flex items-center space-x-4">
+              {/* Metrics Toggle */}
+              <button
+                onClick={() => setShowMetrics(!showMetrics)}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
+                  showMetrics 
+                    ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' 
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+              >
+                📊 Metrics
+              </button>
+
+              {/* Export Button */}
+              <button
+                onClick={() => setShowExportModal(true)}
+                className="px-3 py-2 rounded-md text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors duration-200"
+              >
+                📤 Export
+              </button>
+
               {/* Theme Toggle Button */}
               <button
                 onClick={toggleDarkMode}
@@ -140,14 +356,59 @@ function App() {
                   {connected ? 'Connected' : 'Disconnected'}
                 </span>
               </div>
-              
-              {lastUpdate && (
-                <div className="text-sm text-gray-500 dark:text-gray-400">
-                  Last update: {formatTimestamp(lastUpdate)}
-                </div>
-              )}
             </div>
           </div>
+
+          {/* Mobile Search Bar */}
+          <div className="md:hidden mt-4">
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <span className="text-gray-400">🔍</span>
+              </div>
+              <input
+                type="text"
+                placeholder="Search secrets..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md leading-5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+              />
+            </div>
+          </div>
+
+          {/* Metrics Dashboard */}
+          {showMetrics && metrics.totalSecrets !== undefined && (
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
+                <div className="text-sm font-medium text-blue-600 dark:text-blue-400">Total Secrets</div>
+                <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">{metrics.totalSecrets}</div>
+              </div>
+              <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
+                <div className="text-sm font-medium text-green-600 dark:text-green-400">Total Size</div>
+                <div className="text-2xl font-bold text-green-900 dark:text-green-100">{(metrics.totalSize / 1024).toFixed(1)}KB</div>
+              </div>
+              <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4">
+                <div className="text-sm font-medium text-purple-600 dark:text-purple-400">Avg Size</div>
+                <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">{metrics.avgSecretSize}B</div>
+              </div>
+              <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4">
+                <div className="text-sm font-medium text-orange-600 dark:text-orange-400">Activity 24h</div>
+                <div className="text-2xl font-bold text-orange-900 dark:text-orange-100">{metrics.activityLast24h || 0}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Search Results Info */}
+          {searchQuery && (
+            <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
+              Found {Object.keys(filteredSecrets).length} of {Object.keys(secrets).length} secrets matching "{searchQuery}"
+            </div>
+          )}
+
+          {lastUpdate && (
+            <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+              Last update: {formatTimestamp(lastUpdate)}
+            </div>
+          )}
         </div>
       </header>
 
@@ -159,7 +420,7 @@ function App() {
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow transition-colors duration-200">
               <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Live Secrets ({Object.keys(secrets).length})
+                  Live Secrets ({Object.keys(filteredSecrets).length}{searchQuery && ` of ${Object.keys(secrets).length}`})
                 </h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                   Secrets are automatically synced from Vault via Vault Secrets Operator
@@ -179,39 +440,66 @@ function App() {
                   </div>
                 )}
                 
-                {Object.keys(secrets).length === 0 ? (
+                {Object.keys(filteredSecrets).length === 0 ? (
                   <div className="text-center py-12">
-                    <div className="text-gray-400 dark:text-gray-500 text-6xl mb-4">📁</div>
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No secrets found</h3>
+                    <div className="text-gray-400 dark:text-gray-500 text-6xl mb-4">
+                      {searchQuery ? '🔍' : '📁'}
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                      {searchQuery ? 'No matching secrets found' : 'No secrets found'}
+                    </h3>
                     <p className="text-gray-500 dark:text-gray-400">
-                      Waiting for Vault Secrets Operator to sync secrets to /secrets directory...
+                      {searchQuery 
+                        ? `Try adjusting your search term "${searchQuery}"`
+                        : 'Waiting for Vault Secrets Operator to sync secrets to /secrets directory...'
+                      }
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {Object.entries(secrets).map(([filename, data]) => (
-                      <div key={filename} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 fade-in bg-white dark:bg-gray-750">
-                        <div className="flex justify-between items-start mb-2">
-                          <h3 className="font-medium text-gray-900 dark:text-white flex items-center flex-1 min-w-0 mr-4">
-                            <span className="text-blue-500 mr-2 flex-shrink-0">📄</span>
-                            <span className="break-words">{filename}</span>
-                          </h3>
-                          <div className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
-                            {data.size} bytes
+                    {Object.entries(filteredSecrets)
+                      .sort(([, a], [, b]) => new Date(b.lastModified) - new Date(a.lastModified))
+                      .map(([filename, data]) => {
+                      const formatInfo = validateSecretFormat(data.content, filename);
+                      return (
+                        <div key={filename} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 fade-in bg-white dark:bg-gray-750 hover:shadow-md transition-shadow duration-200">
+                          <div className="flex justify-between items-start mb-2">
+                            <h3 className="font-medium text-gray-900 dark:text-white flex items-center flex-1 min-w-0 mr-4">
+                              <span className="mr-2 flex-shrink-0">{formatInfo.icon}</span>
+                              <span className="break-words">{filename}</span>
+                              <span className={`ml-2 px-2 py-1 text-xs rounded-full flex-shrink-0 ${
+                                formatInfo.valid 
+                                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                                  : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                              }`}>
+                                {formatInfo.format}
+                              </span>
+                            </h3>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
+                              {data.size} bytes
+                            </div>
+                          </div>
+                          
+                          <div className="bg-gray-50 dark:bg-gray-800 rounded p-3 mt-2 overflow-hidden">
+                            <code className={`text-sm block whitespace-pre-wrap break-words overflow-x-auto max-w-full ${data.error ? 'text-red-600 dark:text-red-400' : 'text-gray-800 dark:text-gray-200'}`}>
+                              {data.content}
+                            </code>
+                          </div>
+                          
+                          <div className="flex justify-between items-center text-xs text-gray-400 dark:text-gray-500 mt-2">
+                            <span>Last modified: {new Date(data.lastModified).toLocaleString()}</span>
+                            {selectedSecret === filename && (
+                              <button
+                                onClick={() => setSelectedSecret(null)}
+                                className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                              >
+                                Hide details
+                              </button>
+                            )}
                           </div>
                         </div>
-                        
-                        <div className="bg-gray-50 dark:bg-gray-800 rounded p-3 mt-2 overflow-hidden">
-                          <code className={`text-sm block whitespace-pre-wrap break-words overflow-x-auto max-w-full ${data.error ? 'text-red-600 dark:text-red-400' : 'text-gray-800 dark:text-gray-200'}`}>
-                            {data.content}
-                          </code>
-                        </div>
-                        
-                        <div className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                          Last modified: {new Date(data.lastModified).toLocaleString()}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -288,6 +576,128 @@ function App() {
           </div>
         </div>
       </main>
+
+      {/* Toast Notifications */}
+      <div className="fixed top-4 right-4 z-50 space-y-2">
+        {notifications.map((notification) => (
+          <div
+            key={notification.id}
+            className={`max-w-sm w-full bg-white dark:bg-gray-800 shadow-lg rounded-lg pointer-events-auto ring-1 ring-black ring-opacity-5 transform transition-all duration-300 ${
+              notification.type === 'success' ? 'border-l-4 border-green-500' :
+              notification.type === 'warning' ? 'border-l-4 border-orange-500' :
+              notification.type === 'error' ? 'border-l-4 border-red-500' :
+              'border-l-4 border-blue-500'
+            }`}
+          >
+            <div className="p-4">
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <span className="text-lg">
+                    {notification.type === 'success' ? '✅' :
+                     notification.type === 'warning' ? '⚠️' :
+                     notification.type === 'error' ? '❌' : 'ℹ️'}
+                  </span>
+                </div>
+                <div className="ml-3 w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">
+                    {notification.message}
+                  </p>
+                  {notification.timestamp && (
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {formatTimestamp(notification.timestamp)}
+                    </p>
+                  )}
+                </div>
+                <div className="ml-4 flex-shrink-0 flex">
+                  <button
+                    className="rounded-md inline-flex text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 focus:outline-none"
+                    onClick={() => setNotifications(prev => prev.filter(n => n.id !== notification.id))}
+                  >
+                    <span className="sr-only">Close</span>
+                    <span className="text-lg">×</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Export Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowExportModal(false)}></div>
+            
+            <span className="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+            
+            <div className="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+              <div className="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="sm:flex sm:items-start">
+                  <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 dark:bg-blue-900 sm:mx-0 sm:h-10 sm:w-10">
+                    <span className="text-blue-600 dark:text-blue-400 text-xl">📤</span>
+                  </div>
+                  <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                    <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-white">
+                      Export Secrets
+                    </h3>
+                    <div className="mt-2">
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        Choose a format to export all {Object.keys(secrets).length} secrets.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="mt-6 space-y-3">
+                  <button
+                    onClick={() => { exportSecrets('json'); setShowExportModal(false); }}
+                    className="w-full flex items-center px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
+                  >
+                    <span className="mr-3 text-lg">📋</span>
+                    <div className="text-left">
+                      <div className="font-medium text-gray-900 dark:text-white">JSON Format</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">Complete data with metadata</div>
+                    </div>
+                  </button>
+                  
+                  <button
+                    onClick={() => { exportSecrets('yaml'); setShowExportModal(false); }}
+                    className="w-full flex items-center px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
+                  >
+                    <span className="mr-3 text-lg">📄</span>
+                    <div className="text-left">
+                      <div className="font-medium text-gray-900 dark:text-white">YAML Format</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">Human-readable format</div>
+                    </div>
+                  </button>
+                  
+                  <button
+                    onClick={() => { exportSecrets('csv'); setShowExportModal(false); }}
+                    className="w-full flex items-center px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
+                  >
+                    <span className="mr-3 text-lg">📊</span>
+                    <div className="text-left">
+                      <div className="font-medium text-gray-900 dark:text-white">CSV Format</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">Spreadsheet compatible</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+              
+              <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <button
+                  type="button"
+                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm transition-colors duration-200"
+                  onClick={() => setShowExportModal(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

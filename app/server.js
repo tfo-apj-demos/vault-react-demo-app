@@ -18,6 +18,28 @@ const io = socketIo(server, {
 const PORT = process.env.PORT || 3000;
 const SECRETS_DIR = process.env.SECRETS_DIR || '/secrets';
 
+// In-memory activity log (survives until server restart)
+let activityLog = [];
+const MAX_ACTIVITY_ENTRIES = 100; // Keep last 100 entries
+
+// Function to add activity entry
+function addActivityEntry(action, file, secrets) {
+  const entry = {
+    id: Date.now() + Math.random(), // Ensure uniqueness
+    timestamp: new Date().toISOString(),
+    action,
+    file,
+    secretCount: Object.keys(secrets).length
+  };
+  
+  activityLog.unshift(entry); // Add to beginning
+  if (activityLog.length > MAX_ACTIVITY_ENTRIES) {
+    activityLog = activityLog.slice(0, MAX_ACTIVITY_ENTRIES);
+  }
+  
+  return entry;
+}
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -76,6 +98,38 @@ app.get('/api/secrets', (req, res) => {
   });
 });
 
+// API endpoint to get activity log
+app.get('/api/activity', (req, res) => {
+  res.json({
+    timestamp: new Date().toISOString(),
+    activity: activityLog.slice(0, 10) // Return last 10 entries
+  });
+});
+
+// API endpoint to get metrics
+app.get('/api/metrics', (req, res) => {
+  const secrets = readSecretsFromDirectory();
+  const totalSize = Object.values(secrets).reduce((sum, secret) => sum + (secret.size || 0), 0);
+  
+  // Calculate activity statistics
+  const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const recentActivity = activityLog.filter(entry => new Date(entry.timestamp) > last24Hours);
+  
+  res.json({
+    timestamp: new Date().toISOString(),
+    totalSecrets: Object.keys(secrets).length,
+    totalSize,
+    avgSecretSize: Object.keys(secrets).length > 0 ? Math.round(totalSize / Object.keys(secrets).length) : 0,
+    activityLast24h: recentActivity.length,
+    lastActivity: activityLog[0]?.timestamp || null,
+    secretTypes: Object.keys(secrets).reduce((types, filename) => {
+      const ext = path.extname(filename) || 'no-extension';
+      types[ext] = (types[ext] || 0) + 1;
+      return types;
+    }, {})
+  });
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
@@ -102,6 +156,12 @@ io.on('connection', (socket) => {
     secrets: currentSecrets
   });
   
+  // Send current activity log
+  socket.emit('activity-update', {
+    timestamp: new Date().toISOString(),
+    activity: activityLog.slice(0, 10)
+  });
+  
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
   });
@@ -120,31 +180,55 @@ watcher
   .on('add', (filePath) => {
     console.log(`File added: ${filePath}`);
     const secrets = readSecretsFromDirectory();
+    const activityEntry = addActivityEntry('add', path.basename(filePath), secrets);
+    
     io.emit('secrets-update', {
       timestamp: new Date().toISOString(),
       action: 'add',
       file: path.basename(filePath),
       secrets: secrets
     });
+    
+    io.emit('activity-update', {
+      timestamp: new Date().toISOString(),
+      activity: activityLog.slice(0, 10),
+      newEntry: activityEntry
+    });
   })
   .on('change', (filePath) => {
     console.log(`File changed: ${filePath}`);
     const secrets = readSecretsFromDirectory();
+    const activityEntry = addActivityEntry('change', path.basename(filePath), secrets);
+    
     io.emit('secrets-update', {
       timestamp: new Date().toISOString(),
       action: 'change',
       file: path.basename(filePath),
       secrets: secrets
     });
+    
+    io.emit('activity-update', {
+      timestamp: new Date().toISOString(),
+      activity: activityLog.slice(0, 10),
+      newEntry: activityEntry
+    });
   })
   .on('unlink', (filePath) => {
     console.log(`File removed: ${filePath}`);
     const secrets = readSecretsFromDirectory();
+    const activityEntry = addActivityEntry('remove', path.basename(filePath), secrets);
+    
     io.emit('secrets-update', {
       timestamp: new Date().toISOString(),
       action: 'remove',
       file: path.basename(filePath),
       secrets: secrets
+    });
+    
+    io.emit('activity-update', {
+      timestamp: new Date().toISOString(),
+      activity: activityLog.slice(0, 10),
+      newEntry: activityEntry
     });
   })
   .on('error', (error) => {
