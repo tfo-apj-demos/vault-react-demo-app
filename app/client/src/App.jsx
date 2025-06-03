@@ -277,7 +277,7 @@ function App() {
           ...Object.entries(secrets).map(([name, data]) => [
             name,
             data.size,
-            new Date(data.lastModified).toLocaleString(),
+            formatTimestamp(data.lastModified),
             data.content.substring(0, 100) + (data.content.length > 100 ? '...' : '')
           ])
         ];
@@ -305,7 +305,17 @@ function App() {
   };
 
   const formatTimestamp = (timestamp) => {
-    return new Date(timestamp).toLocaleTimeString();
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', { 
+      timeZone: 'UTC',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      timeZoneName: 'short'
+    });
   };
 
   const getActionColor = (action) => {
@@ -603,7 +613,7 @@ function App() {
                           </div>
                           
                           <div className="flex justify-between items-center text-xs text-gray-400 dark:text-gray-500 mt-2">
-                            <span>Last modified: {new Date(data.lastModified).toLocaleString()}</span>
+                            <span>Last modified: {formatTimestamp(data.lastModified)}</span>
                             {selectedSecret === filename && (
                               <button
                                 onClick={() => setSelectedSecret(null)}
