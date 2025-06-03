@@ -54,6 +54,7 @@ function readSecretsFromDirectory() {
   try {
     if (fs.existsSync(SECRETS_DIR)) {
       const files = fs.readdirSync(SECRETS_DIR);
+      console.log(`Found ${files.length} files in ${SECRETS_DIR}:`, files); // Debug logging
       
       files.forEach(file => {
         const filePath = path.join(SECRETS_DIR, file);
@@ -62,6 +63,10 @@ function readSecretsFromDirectory() {
         if (stats.isFile()) {
           try {
             const content = fs.readFileSync(filePath, 'utf8');
+            const hasExtension = file.includes('.');
+            const extension = hasExtension ? path.extname(file) : 'none';
+            console.log(`Processing file: "${file}", extension: "${extension}", has_extension: ${hasExtension}, size: ${stats.size}, content preview: "${content.substring(0, 100)}..."`); // Debug logging
+            
             secrets[file] = {
               content: content.trim(),
               lastModified: stats.mtime,
@@ -76,6 +81,8 @@ function readSecretsFromDirectory() {
               error: true
             };
           }
+        } else {
+          console.log(`Skipping non-file: ${file}`); // Debug logging
         }
       });
     } else {

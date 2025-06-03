@@ -161,7 +161,11 @@ function App() {
   };
 
   const validateSecretFormat = (content, filename) => {
+    console.log(`Validating format for file: "${filename}", extension: "${filename.split('.').pop()?.toLowerCase()}"`); // Debug logging
     const ext = filename.split('.').pop()?.toLowerCase();
+    
+    // If filename has no extension or extension equals filename, try content-based detection
+    const hasExtension = filename.includes('.') && ext !== filename;
     
     try {
       switch (ext) {
@@ -189,13 +193,63 @@ function App() {
         case 'crt':
           return { valid: true, format: 'Certificate/Key', icon: '🔐' };
         default:
-          // JWT token detection
+          // Content-based detection when no file extension
+          if (!hasExtension) {
+            // JWT token detection
+            if (content.startsWith('eyJ') && content.split('.').length === 3) {
+              return { valid: true, format: 'JWT Token', icon: '🎫' };
+            }
+            
+            // JSON detection
+            try {
+              JSON.parse(content);
+              return { valid: true, format: 'JSON', icon: '📋' };
+            } catch (e) {
+              // Not JSON, continue checking
+            }
+            
+            // YAML detection
+            if (content.includes('---') || (content.includes(':') && content.includes('\n'))) {
+              return { valid: true, format: 'YAML', icon: '📄' };
+            }
+            
+            // ENV format detection
+            const lines = content.split('\n').filter(line => line.trim());
+            if (lines.length > 0 && lines.every(line => 
+              line.startsWith('#') || line.includes('=') || line.trim() === ''
+            )) {
+              return { valid: true, format: 'ENV', icon: '🔧' };
+            }
+            
+            // Certificate/Key detection
+            if (content.includes('-----BEGIN') && content.includes('-----END')) {
+              return { valid: true, format: 'Certificate/Key', icon: '🔐' };
+            }
+            
+            // Database URL detection
+            if (content.match(/^(postgresql|mysql|mongodb|redis):\/\//)) {
+              return { valid: true, format: 'Database URL', icon: '🗄️' };
+            }
+            
+            // API Key detection (alphanumeric strings)
+            if (content.match(/^[a-zA-Z0-9_-]{16,}$/) && !content.includes(' ')) {
+              return { valid: true, format: 'API Key', icon: '🔑' };
+            }
+            
+            // Default to plain text for files without extensions
+            return { valid: true, format: 'Text', icon: '📝' };
+          }
+          
+          // JWT token detection for files with unknown extensions
           if (content.startsWith('eyJ') && content.split('.').length === 3) {
             return { valid: true, format: 'JWT Token', icon: '🎫' };
           }
+          
+          console.log(`Unknown format for file: "${filename}", content starts with: "${content.substring(0, 50)}"`); // Debug logging
           return { valid: true, format: 'Unknown', icon: '📄' };
       }
     } catch (e) {
+      console.error(`Error validating format for file: "${filename}":`, e.message); // Debug logging
       return { valid: false, format: ext?.toUpperCase() || 'Unknown', icon: '⚠️' };
     }
   };
