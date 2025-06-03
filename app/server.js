@@ -67,14 +67,14 @@ function readSecretsFromDirectory() {
             
             secrets[file] = {
               content: content.trim(),
-              lastModified: stats.mtime,
+              lastModified: stats.mtime.toISOString(),
               size: stats.size
             };
           } catch (err) {
             console.error(`Error reading file ${file}:`, err.message);
             secrets[file] = {
               content: `Error reading file: ${err.message}`,
-              lastModified: stats.mtime,
+              lastModified: stats.mtime.toISOString(),
               size: stats.size,
               error: true
             };
@@ -142,6 +142,24 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     secretsDir: SECRETS_DIR,
     secretsDirExists: fs.existsSync(SECRETS_DIR)
+  });
+});
+
+// Health check endpoint that also triggers secret refresh
+app.get('/api/health-refresh', (req, res) => {
+  const secrets = readSecretsFromDirectory();
+  io.emit('secrets-update', {
+    timestamp: new Date().toISOString(),
+    action: 'health-refresh',
+    file: 'manual-refresh',
+    secrets: secrets
+  });
+  
+  res.json({ 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    secretCount: Object.keys(secrets).length,
+    refreshTriggered: true
   });
 });
 
@@ -331,13 +349,14 @@ watcher
     console.log('File watcher ready. Watching for changes...');
   });
 
-// Additional fallback: aggressive polling for Kubernetes environments
-// This ensures we catch changes even if file events are missed
+// Ultra-aggressive Kubernetes secret detection with multiple strategies
 let lastSecretHash = '';
+let lastSecretsDir = '';
+let kubernetesDetectionActive = true;
 
+// Strategy 1: Super fast content polling
 const pollSecrets = () => {
   const secrets = readSecretsFromDirectory();
-  // Create a more comprehensive hash that includes content and metadata
   const secretData = Object.entries(secrets).map(([filename, data]) => ({
     filename,
     content: data.content,
@@ -347,13 +366,13 @@ const pollSecrets = () => {
   const currentHash = JSON.stringify(secretData);
   
   if (currentHash !== lastSecretHash && lastSecretHash !== '') {
-    console.log('Fallback polling detected secret changes');
-    const activityEntry = addActivityEntry('poll-refresh', 'fallback-detection', secrets);
+    console.log('🔄 Fast polling detected secret changes');
+    const activityEntry = addActivityEntry('fast-poll', 'content-change', secrets);
     
     io.emit('secrets-update', {
       timestamp: new Date().toISOString(),
-      action: 'poll-refresh',
-      file: 'fallback-detection',
+      action: 'fast-poll',
+      file: 'content-change',
       secrets: secrets
     });
     
@@ -367,9 +386,257 @@ const pollSecrets = () => {
   lastSecretHash = currentHash;
 };
 
-// Aggressive polling every 1 second (reduced from 5 seconds)
-setInterval(pollSecrets, 1000);
-console.log('Aggressive fallback polling enabled (every 1 second)');
+// Strategy 2: Monitor the secrets directory symlink itself
+const monitorSecretsSymlink = () => {
+  try {
+    if (fs.existsSync(SECRETS_DIR)) {
+      const stats = fs.lstatSync(SECRETS_DIR);
+      const currentTarget = stats.isSymbolicLink() ? fs.readlinkSync(SECRETS_DIR) : SECRETS_DIR;
+      
+      if (currentTarget !== lastSecretsDir && lastSecretsDir !== '') {
+        console.log(`🔗 Symlink change detected: ${lastSecretsDir} -> ${currentTarget}`);
+        const secrets = readSecretsFromDirectory();
+        const activityEntry = addActivityEntry('symlink-change', 'kubernetes-mount', secrets);
+        
+        io.emit('secrets-update', {
+          timestamp: new Date().toISOString(),
+          action: 'symlink-change',
+          file: 'kubernetes-mount',
+          secrets: secrets
+        });
+        
+        io.emit('activity-update', {
+          timestamp: new Date().toISOString(),
+          activity: activityLog.slice(0, 10),
+          newEntry: activityEntry
+        });
+      }
+      
+      lastSecretsDir = currentTarget;
+    }
+  } catch (err) {
+    // Silently handle errors in symlink monitoring
+  }
+};
+
+// Strategy 3: Watch /tmp for Kubernetes temporary files
+const tmpWatcher = chokidar.watch('/tmp', {
+  ignored: (filePath) => {
+    // Only watch Kubernetes-related temp files
+    const basename = path.basename(filePath);
+    return !basename.includes('..data') && !basename.includes('vault') && !basename.includes('secret');
+  },
+  persistent: true,
+  ignoreInitial: true,
+  usePolling: true,
+  interval: 200,
+  depth: 2,
+  awaitWriteFinish: {
+    stabilityThreshold: 10,
+    pollInterval: 10
+  }
+});
+
+tmpWatcher.on('addDir', (dirPath) => {
+  if (dirPath.includes('..data') || dirPath.includes('vault') || dirPath.includes('secret')) {
+    console.log(`🔍 Kubernetes temp directory detected: ${dirPath}`);
+    setTimeout(() => {
+      const secrets = readSecretsFromDirectory();
+      io.emit('secrets-update', {
+        timestamp: new Date().toISOString(),
+        action: 'k8s-temp-dir',
+        file: 'temp-directory',
+        secrets: secrets
+      });
+    }, 50);
+  }
+});
+
+// Strategy 4: Monitor inode changes
+let lastInodeData = new Map();
+
+const monitorInodes = () => {
+  try {
+    if (fs.existsSync(SECRETS_DIR)) {
+      const files = fs.readdirSync(SECRETS_DIR);
+      let inodeChanged = false;
+      
+      files.forEach(file => {
+        const filePath = path.join(SECRETS_DIR, file);
+        try {
+          const stats = fs.statSync(filePath);
+          const currentInode = `${stats.ino}_${stats.mtime.getTime()}_${stats.size}`;
+          const lastInode = lastInodeData.get(file);
+          
+          if (lastInode && lastInode !== currentInode) {
+            console.log(`📊 Inode change detected for ${file}: ${lastInode} -> ${currentInode}`);
+            inodeChanged = true;
+          }
+          
+          lastInodeData.set(file, currentInode);
+        } catch (err) {
+          // Handle file access errors
+        }
+      });
+      
+      if (inodeChanged) {
+        const secrets = readSecretsFromDirectory();
+        const activityEntry = addActivityEntry('inode-change', 'file-metadata', secrets);
+        
+        io.emit('secrets-update', {
+          timestamp: new Date().toISOString(),
+          action: 'inode-change',
+          file: 'file-metadata',
+          secrets: secrets
+        });
+        
+        io.emit('activity-update', {
+          timestamp: new Date().toISOString(),
+          activity: activityLog.slice(0, 10),
+          newEntry: activityEntry
+        });
+      }
+    }
+  } catch (err) {
+    // Handle directory access errors
+  }
+};
+
+// Strategy 5: Watch for process events (new approach)
+const { spawn } = require('child_process');
+
+const watchWithInotify = () => {
+  // Try to use inotify tools if available in the container
+  const inotify = spawn('inotifywait', ['-m', '-r', '-e', 'modify,create,delete,move', SECRETS_DIR], {
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+  
+  if (inotify.stdout) {
+    inotify.stdout.on('data', (data) => {
+      console.log(`🔔 inotify event: ${data.toString().trim()}`);
+      setTimeout(() => {
+        const secrets = readSecretsFromDirectory();
+        io.emit('secrets-update', {
+          timestamp: new Date().toISOString(),
+          action: 'inotify',
+          file: 'system-event',
+          secrets: secrets
+        });
+      }, 10);
+    });
+  }
+  
+  inotify.on('error', () => {
+    // inotify not available, that's okay
+  });
+};
+
+// Strategy 6: Process signal handlers for Kubernetes lifecycle
+process.on('SIGUSR1', () => {
+  console.log('📡 Received SIGUSR1 - checking for secret updates');
+  setTimeout(() => {
+    const secrets = readSecretsFromDirectory();
+    io.emit('secrets-update', {
+      timestamp: new Date().toISOString(),
+      action: 'signal-update',
+      file: 'process-signal',
+      secrets: secrets
+    });
+  }, 100);
+});
+
+process.on('SIGHUP', () => {
+  console.log('📡 Received SIGHUP - reloading secrets');
+  setTimeout(() => {
+    const secrets = readSecretsFromDirectory();
+    io.emit('secrets-update', {
+      timestamp: new Date().toISOString(),
+      action: 'sighup-reload',
+      file: 'process-reload',
+      secrets: secrets
+    });
+  }, 100);
+});
+
+// Start all monitoring strategies
+setInterval(pollSecrets, 250); // Even faster - every 250ms
+setInterval(monitorSecretsSymlink, 200); // Monitor symlinks every 200ms  
+setInterval(monitorInodes, 300); // Monitor inodes every 300ms
+
+// Strategy 7: Monitor Kubernetes service account token for changes (indicates K8s updates)
+const monitorK8sToken = () => {
+  try {
+    const tokenPath = '/var/run/secrets/kubernetes.io/serviceaccount/token';
+    if (fs.existsSync(tokenPath)) {
+      const stats = fs.statSync(tokenPath);
+      const tokenMTime = stats.mtime.getTime();
+      
+      if (!global.lastTokenMTime) {
+        global.lastTokenMTime = tokenMTime;
+      } else if (global.lastTokenMTime !== tokenMTime) {
+        console.log('🎯 Kubernetes token change detected - checking secrets');
+        global.lastTokenMTime = tokenMTime;
+        
+        setTimeout(() => {
+          const secrets = readSecretsFromDirectory();
+          io.emit('secrets-update', {
+            timestamp: new Date().toISOString(),
+            action: 'k8s-token-change',
+            file: 'token-update',
+            secrets: secrets
+          });
+        }, 50);
+      }
+    }
+  } catch (err) {
+    // Token monitoring not available
+  }
+};
+
+// Strategy 8: Monitor memory pressure as indicator of Kubernetes changes
+let lastMemoryUsage = 0;
+const monitorMemoryPressure = () => {
+  try {
+    const memUsage = process.memoryUsage();
+    const currentUsage = memUsage.rss;
+    
+    // If memory usage changes significantly (more than 1MB), check for secret updates
+    if (Math.abs(currentUsage - lastMemoryUsage) > 1024 * 1024) {
+      console.log('💾 Memory pressure change detected - checking secrets');
+      lastMemoryUsage = currentUsage;
+      
+      setTimeout(() => {
+        const secrets = readSecretsFromDirectory();
+        io.emit('secrets-update', {
+          timestamp: new Date().toISOString(),
+          action: 'memory-pressure',
+          file: 'system-change',
+          secrets: secrets
+        });
+      }, 30);
+    } else {
+      lastMemoryUsage = currentUsage;
+    }
+  } catch (err) {
+    // Memory monitoring failed
+  }
+};
+
+setInterval(monitorK8sToken, 100); // Check token every 100ms
+setInterval(monitorMemoryPressure, 500); // Check memory every 500ms
+
+console.log('🚀 Ultra-aggressive Kubernetes secret monitoring enabled:');
+console.log('  - Content polling: every 250ms');
+console.log('  - Symlink monitoring: every 200ms');
+console.log('  - Inode monitoring: every 300ms');
+console.log('  - K8s token monitoring: every 100ms');
+console.log('  - Memory pressure monitoring: every 500ms');
+console.log('  - Temp directory watching: active');
+console.log('  - Native file watching: active');
+console.log('  - Process signal handlers: active');
+
+// Try inotify if available
+setTimeout(watchWithInotify, 1000);
 
 // Graceful shutdown
 process.on('SIGINT', () => {
