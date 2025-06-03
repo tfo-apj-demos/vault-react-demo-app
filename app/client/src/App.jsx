@@ -7,6 +7,19 @@ function App() {
   const [lastUpdate, setLastUpdate] = useState(null);
   const [activity, setActivity] = useState([]);
   const [error, setError] = useState(null);
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = localStorage.getItem('darkMode');
+    return saved ? JSON.parse(saved) : false;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('darkMode', JSON.stringify(darkMode));
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
 
   useEffect(() => {
     const socket = io();
@@ -83,10 +96,14 @@ function App() {
     }
   };
 
+  const toggleDarkMode = () => {
+    setDarkMode(!darkMode);
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b">
+      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 transition-colors duration-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center space-x-4">
@@ -94,27 +111,40 @@ function App() {
                 <div className="w-8 h-8 bg-vault-yellow rounded flex items-center justify-center">
                   <span className="text-vault-dark font-bold text-sm">V</span>
                 </div>
-                <h1 className="text-2xl font-bold text-gray-900">
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
                   Vault Secrets Demo
                 </h1>
               </div>
-              <div className="hidden sm:block text-sm text-gray-500">
+              <div className="hidden sm:block text-sm text-gray-500 dark:text-gray-400">
                 Vault → VSO → Kubernetes → Web UI
               </div>
             </div>
             
             <div className="flex items-center space-x-4">
+              {/* Theme Toggle Button */}
+              <button
+                onClick={toggleDarkMode}
+                className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200"
+                title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+              >
+                {darkMode ? (
+                  <span className="text-yellow-500 text-lg">☀️</span>
+                ) : (
+                  <span className="text-gray-700 text-lg">🌙</span>
+                )}
+              </button>
+              
               <div className="flex items-center space-x-2">
                 <div className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}>
                   {connected && <div className="w-3 h-3 rounded-full bg-green-500 pulse-ring"></div>}
                 </div>
-                <span className={`text-sm font-medium ${connected ? 'text-green-600' : 'text-red-600'}`}>
+                <span className={`text-sm font-medium ${connected ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                   {connected ? 'Connected' : 'Disconnected'}
                 </span>
               </div>
               
               {lastUpdate && (
-                <div className="text-sm text-gray-500">
+                <div className="text-sm text-gray-500 dark:text-gray-400">
                   Last update: {formatTimestamp(lastUpdate)}
                 </div>
               )}
@@ -128,24 +158,24 @@ function App() {
           
           {/* Secrets Panel */}
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-lg shadow">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow transition-colors duration-200">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Live Secrets ({Object.keys(secrets).length})
                 </h2>
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                   Secrets are automatically synced from Vault via Vault Secrets Operator
                 </p>
               </div>
               
               <div className="p-6">
                 {error && (
-                  <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md">
+                  <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
                     <div className="flex">
                       <div className="text-red-400">⚠</div>
                       <div className="ml-3">
-                        <h3 className="text-sm font-medium text-red-800">Error</h3>
-                        <div className="mt-2 text-sm text-red-700">{error}</div>
+                        <h3 className="text-sm font-medium text-red-800 dark:text-red-200">Error</h3>
+                        <div className="mt-2 text-sm text-red-700 dark:text-red-300">{error}</div>
                       </div>
                     </div>
                   </div>
@@ -153,33 +183,33 @@ function App() {
                 
                 {Object.keys(secrets).length === 0 ? (
                   <div className="text-center py-12">
-                    <div className="text-gray-400 text-6xl mb-4">📁</div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No secrets found</h3>
-                    <p className="text-gray-500">
+                    <div className="text-gray-400 dark:text-gray-500 text-6xl mb-4">📁</div>
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No secrets found</h3>
+                    <p className="text-gray-500 dark:text-gray-400">
                       Waiting for Vault Secrets Operator to sync secrets to /secrets directory...
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {Object.entries(secrets).map(([filename, data]) => (
-                      <div key={filename} className="border border-gray-200 rounded-lg p-4 fade-in">
+                      <div key={filename} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 fade-in bg-white dark:bg-gray-750">
                         <div className="flex justify-between items-start mb-2">
-                          <h3 className="font-medium text-gray-900 flex items-center">
-                            <span className="text-blue-500 mr-2">📄</span>
-                            {filename}
+                          <h3 className="font-medium text-gray-900 dark:text-white flex items-center flex-1 min-w-0 mr-4">
+                            <span className="text-blue-500 mr-2 flex-shrink-0">📄</span>
+                            <span className="break-words">{filename}</span>
                           </h3>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
                             {data.size} bytes
                           </div>
                         </div>
                         
-                        <div className="bg-gray-50 rounded p-3 mt-2">
-                          <code className={`text-sm block whitespace-pre-wrap ${data.error ? 'text-red-600' : 'text-gray-800'}`}>
+                        <div className="bg-gray-50 dark:bg-gray-800 rounded p-3 mt-2 overflow-hidden">
+                          <code className={`text-sm block whitespace-pre-wrap break-words overflow-x-auto max-w-full ${data.error ? 'text-red-600 dark:text-red-400' : 'text-gray-800 dark:text-gray-200'}`}>
                             {data.content}
                           </code>
                         </div>
                         
-                        <div className="text-xs text-gray-400 mt-2">
+                        <div className="text-xs text-gray-400 dark:text-gray-500 mt-2">
                           Last modified: {new Date(data.lastModified).toLocaleString()}
                         </div>
                       </div>
@@ -192,10 +222,10 @@ function App() {
 
           {/* Activity Panel */}
           <div>
-            <div className="bg-white rounded-lg shadow">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">Activity Feed</h2>
-                <p className="text-sm text-gray-500 mt-1">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow transition-colors duration-200">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Activity Feed</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                   Real-time file system changes
                 </p>
               </div>
@@ -203,8 +233,8 @@ function App() {
               <div className="p-6">
                 {activity.length === 0 ? (
                   <div className="text-center py-8">
-                    <div className="text-gray-400 text-4xl mb-2">📊</div>
-                    <p className="text-gray-500 text-sm">No activity yet</p>
+                    <div className="text-gray-400 dark:text-gray-500 text-4xl mb-2">📊</div>
+                    <p className="text-gray-500 dark:text-gray-400 text-sm">No activity yet</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -214,13 +244,13 @@ function App() {
                           {getActionIcon(entry.action)}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm text-gray-900">
-                            <span className="font-medium">{entry.file}</span> was{' '}
+                          <div className="text-sm text-gray-900 dark:text-white">
+                            <span className="font-medium break-words">{entry.file}</span> was{' '}
                             <span className={getActionColor(entry.action).split(' ')[0]}>
                               {entry.action === 'change' ? 'modified' : entry.action === 'add' ? 'added' : 'removed'}
                             </span>
                           </div>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
                             {formatTimestamp(entry.timestamp)} • {entry.secretCount} total secrets
                           </div>
                         </div>
@@ -232,27 +262,27 @@ function App() {
             </div>
             
             {/* Info Panel */}
-            <div className="mt-6 bg-blue-50 rounded-lg p-6">
-              <h3 className="text-sm font-semibold text-blue-900 mb-3">How it works</h3>
-              <div className="space-y-2 text-xs text-blue-800">
+            <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 rounded-lg p-6 transition-colors duration-200">
+              <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3">How it works</h3>
+              <div className="space-y-2 text-xs text-blue-800 dark:text-blue-200">
                 <div className="flex items-center space-x-2">
-                  <span className="text-blue-500">1.</span>
+                  <span className="text-blue-500 dark:text-blue-400">1.</span>
                   <span>VSO pulls from Vault every 30s</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="text-blue-500">2.</span>
+                  <span className="text-blue-500 dark:text-blue-400">2.</span>
                   <span>Updates Kubernetes Secret</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="text-blue-500">3.</span>
+                  <span className="text-blue-500 dark:text-blue-400">3.</span>
                   <span>Projected as files in /secrets</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="text-blue-500">4.</span>
+                  <span className="text-blue-500 dark:text-blue-400">4.</span>
                   <span>Chokidar watches & pushes via WebSocket</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="text-blue-500">5.</span>
+                  <span className="text-blue-500 dark:text-blue-400">5.</span>
                   <span>React updates live—no refresh!</span>
                 </div>
               </div>

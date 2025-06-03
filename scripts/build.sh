@@ -34,7 +34,7 @@ echo "🚀 To push to registry, run:"
 echo "   docker push $FULL_IMAGE_NAME"
 echo
 echo "🧪 To test locally, run:"
-echo "   docker run -p 3000:3000 -v /tmp/secrets:/secrets $FULL_IMAGE_NAME"
+echo "   docker run -p 3001:3000 -v /tmp/secrets:/secrets $FULL_IMAGE_NAME"
 
 # Push if requested
 if [[ "${PUSH_IMAGE}" == "true" ]]; then
