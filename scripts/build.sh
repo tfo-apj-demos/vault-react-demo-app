@@ -18,29 +18,27 @@ echo "Project root: $PROJECT_ROOT"
 echo "Image: $FULL_IMAGE_NAME"
 echo
 
-# Build the Docker image
-echo "📦 Building Docker image..."
-docker build \
+# Check if buildx is available and create builder if needed
+echo "🔧 Setting up multi-platform builder..."
+docker buildx create --name multiarch-builder --use --bootstrap 2>/dev/null || docker buildx use multiarch-builder
+
+# Build multi-architecture image and push
+echo "📦 Building multi-architecture Docker image (amd64, arm64)..."
+docker buildx build \
+    --platform linux/amd64,linux/arm64 \
     -f "$PROJECT_ROOT/docker/Dockerfile" \
     -t "$FULL_IMAGE_NAME" \
+    --push \
     "$PROJECT_ROOT"
 
-echo "✅ Build completed successfully!"
+echo "✅ Multi-architecture build and push completed successfully!"
 echo "📋 Image details:"
-docker images "$FULL_IMAGE_NAME"
+echo "   Registry: $REGISTRY"
+echo "   Image: $IMAGE_NAME:$IMAGE_TAG"
+echo "   Platforms: linux/amd64, linux/arm64"
 
-echo
-echo "🚀 To push to registry, run:"
-echo "   docker push $FULL_IMAGE_NAME"
 echo
 echo "🧪 To test locally, run:"
 echo "   docker run -p 3001:3000 -v /tmp/secrets:/secrets $FULL_IMAGE_NAME"
-
-# Push if requested
-if [[ "${PUSH_IMAGE}" == "true" ]]; then
-    echo "📤 Pushing image to registry..."
-    docker push "$FULL_IMAGE_NAME"
-    echo "✅ Image pushed successfully!"
-fi
 
 echo "🎉 Build complete!"

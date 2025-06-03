@@ -161,7 +161,6 @@ function App() {
   };
 
   const validateSecretFormat = (content, filename) => {
-    console.log(`Validating format for file: "${filename}", extension: "${filename.split('.').pop()?.toLowerCase()}"`); // Debug logging
     const ext = filename.split('.').pop()?.toLowerCase();
     
     // If filename has no extension or extension equals filename, try content-based detection

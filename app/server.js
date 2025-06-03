@@ -54,7 +54,6 @@ function readSecretsFromDirectory() {
   try {
     if (fs.existsSync(SECRETS_DIR)) {
       const files = fs.readdirSync(SECRETS_DIR);
-      console.log(`Found ${files.length} files in ${SECRETS_DIR}:`, files); // Debug logging
       
       files.forEach(file => {
         const filePath = path.join(SECRETS_DIR, file);
@@ -65,7 +64,6 @@ function readSecretsFromDirectory() {
             const content = fs.readFileSync(filePath, 'utf8');
             const hasExtension = file.includes('.');
             const extension = hasExtension ? path.extname(file) : 'none';
-            console.log(`Processing file: "${file}", extension: "${extension}", has_extension: ${hasExtension}, size: ${stats.size}, content preview: "${content.substring(0, 100)}..."`); // Debug logging
             
             secrets[file] = {
               content: content.trim(),
@@ -82,7 +80,7 @@ function readSecretsFromDirectory() {
             };
           }
         } else {
-          console.log(`Skipping non-file: ${file}`); // Debug logging
+          // Skip non-files (directories, symlinks, etc.)
         }
       });
     } else {
@@ -177,11 +175,66 @@ io.on('connection', (socket) => {
 // Watch the secrets directory for changes
 console.log(`Watching secrets directory: ${SECRETS_DIR}`);
 
+// Kubernetes-optimized chokidar configuration with aggressive polling
 const watcher = chokidar.watch(SECRETS_DIR, {
   ignored: /^\./,
   persistent: true,
-  ignoreInitial: false
+  ignoreInitial: false,
+  // Kubernetes secret mounts use symlinks that get swapped atomically
+  followSymlinks: true,
+  // Always enable polling in Kubernetes environments for reliability
+  usePolling: true,
+  interval: 500, // Poll every 500ms for faster detection
+  binaryInterval: 300, // Even faster for binary files
+  // Watch for directory changes too (Kubernetes creates new dirs)
+  depth: 2, // Increased depth for Kubernetes mount structure
+  // Reduced wait times for faster detection
+  awaitWriteFinish: {
+    stabilityThreshold: 50,
+    pollInterval: 50
+  },
+  // Additional Kubernetes-specific options
+  alwaysStat: true, // Always check file stats
+  atomic: true // Handle atomic moves (Kubernetes secret updates)
 });
+
+// Additional watcher for parent directory to catch Kubernetes mount behavior
+const parentWatcher = chokidar.watch(path.dirname(SECRETS_DIR), {
+  ignored: /^\./,
+  persistent: true,
+  ignoreInitial: true,
+  followSymlinks: true,
+  usePolling: true,
+  interval: 500,
+  depth: 1,
+  awaitWriteFinish: {
+    stabilityThreshold: 50,
+    pollInterval: 50
+  }
+});
+
+parentWatcher
+  .on('addDir', (dirPath) => {
+    if (dirPath.includes('..data') || path.basename(dirPath) === path.basename(SECRETS_DIR)) {
+      console.log(`Parent directory change detected (Kubernetes mount): ${dirPath}`);
+      setTimeout(() => {
+        const secrets = readSecretsFromDirectory();
+        io.emit('secrets-update', {
+          timestamp: new Date().toISOString(),
+          action: 'mount-refresh',
+          file: 'kubernetes-mount',
+          secrets: secrets
+        });
+      }, 200);
+    }
+  })
+  .on('unlinkDir', (dirPath) => {
+    if (dirPath.includes('..data') || path.basename(dirPath) === path.basename(SECRETS_DIR)) {
+      console.log(`Parent directory removal detected (Kubernetes unmount): ${dirPath}`);
+    }
+  });
+
+console.log(`Also watching parent directory: ${path.dirname(SECRETS_DIR)} for Kubernetes mount changes`);
 
 watcher
   .on('add', (filePath) => {
@@ -238,18 +291,91 @@ watcher
       newEntry: activityEntry
     });
   })
+  .on('addDir', (dirPath) => {
+    console.log(`Directory added (Kubernetes secret update?): ${dirPath}`);
+    // In Kubernetes, secret updates create new directories
+    // Trigger immediate refresh - reduced delay for faster response
+    setTimeout(() => {
+      const secrets = readSecretsFromDirectory();
+      console.log('Triggered refresh due to directory change');
+      io.emit('secrets-update', {
+        timestamp: new Date().toISOString(),
+        action: 'refresh',
+        file: 'directory-change',
+        secrets: secrets
+      });
+    }, 100); // Reduced from 500ms to 100ms
+  })
+  .on('unlinkDir', (dirPath) => {
+    console.log(`Directory removed (Kubernetes secret cleanup?): ${dirPath}`);
+    // Also trigger refresh when directories are removed
+    setTimeout(() => {
+      const secrets = readSecretsFromDirectory();
+      console.log('Triggered refresh due to directory removal');
+      io.emit('secrets-update', {
+        timestamp: new Date().toISOString(),
+        action: 'refresh',
+        file: 'directory-removal',
+        secrets: secrets
+      });
+    }, 100);
+  })
   .on('error', (error) => {
     console.error('Watcher error:', error);
     io.emit('secrets-error', {
       timestamp: new Date().toISOString(),
       error: error.message
     });
+  })
+  .on('ready', () => {
+    console.log('File watcher ready. Watching for changes...');
   });
+
+// Additional fallback: aggressive polling for Kubernetes environments
+// This ensures we catch changes even if file events are missed
+let lastSecretHash = '';
+
+const pollSecrets = () => {
+  const secrets = readSecretsFromDirectory();
+  // Create a more comprehensive hash that includes content and metadata
+  const secretData = Object.entries(secrets).map(([filename, data]) => ({
+    filename,
+    content: data.content,
+    lastModified: data.lastModified?.getTime() || 0,
+    size: data.size || 0
+  }));
+  const currentHash = JSON.stringify(secretData);
+  
+  if (currentHash !== lastSecretHash && lastSecretHash !== '') {
+    console.log('Fallback polling detected secret changes');
+    const activityEntry = addActivityEntry('poll-refresh', 'fallback-detection', secrets);
+    
+    io.emit('secrets-update', {
+      timestamp: new Date().toISOString(),
+      action: 'poll-refresh',
+      file: 'fallback-detection',
+      secrets: secrets
+    });
+    
+    io.emit('activity-update', {
+      timestamp: new Date().toISOString(),
+      activity: activityLog.slice(0, 10),
+      newEntry: activityEntry
+    });
+  }
+  
+  lastSecretHash = currentHash;
+};
+
+// Aggressive polling every 1 second (reduced from 5 seconds)
+setInterval(pollSecrets, 1000);
+console.log('Aggressive fallback polling enabled (every 1 second)');
 
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('Shutting down gracefully...');
   watcher.close();
+  parentWatcher.close();
   server.close(() => {
     console.log('Server closed');
     process.exit(0);
