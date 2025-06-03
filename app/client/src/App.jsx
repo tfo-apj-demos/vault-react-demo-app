@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import io from 'socket.io-client';
+import WorkflowDiagram from './WorkflowDiagram';
 
 function App() {
   const [secrets, setSecrets] = useState({});
@@ -21,6 +22,7 @@ function App() {
   const [filteredSecrets, setFilteredSecrets] = useState({});
   const [secretFormat, setSecretFormat] = useState({});
   const [showExportModal, setShowExportModal] = useState(false);
+  const [activeTab, setActiveTab] = useState('secrets'); // New tab state
 
   useEffect(() => {
     localStorage.setItem('darkMode', JSON.stringify(darkMode));
@@ -291,51 +293,82 @@ function App() {
                 </h1>
               </div>
               
-              {/* Search Bar */}
-              <div className="hidden md:block">
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <span className="text-gray-400">🔍</span>
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Search secrets..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="block w-64 pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md leading-5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
-                  />
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery('')}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
+              {/* Tab Navigation */}
+              <div className="hidden md:flex space-x-1 ml-8">
+                <button
+                  onClick={() => setActiveTab('secrets')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
+                    activeTab === 'secrets'
+                      ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  }`}
+                >
+                  🔐 Live Secrets
+                </button>
+                <button
+                  onClick={() => setActiveTab('workflow')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
+                    activeTab === 'workflow'
+                      ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  }`}
+                >
+                  🔄 How It Works
+                </button>
               </div>
+              
+              {/* Search Bar - only show on secrets tab */}
+              {activeTab === 'secrets' && (
+                <div className="hidden md:block">
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <span className="text-gray-400">🔍</span>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Search secrets..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="block w-64 pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md leading-5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
             
             <div className="flex items-center space-x-4">
-              {/* Metrics Toggle */}
-              <button
-                onClick={() => setShowMetrics(!showMetrics)}
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
-                  showMetrics 
-                    ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' 
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                }`}
-              >
-                📊 Metrics
-              </button>
+              {/* Tab-specific buttons */}
+              {activeTab === 'secrets' && (
+                <>
+                  {/* Metrics Toggle */}
+                  <button
+                    onClick={() => setShowMetrics(!showMetrics)}
+                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
+                      showMetrics 
+                        ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' 
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                    }`}
+                  >
+                    📊 Metrics
+                  </button>
 
-              {/* Export Button */}
-              <button
-                onClick={() => setShowExportModal(true)}
-                className="px-3 py-2 rounded-md text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors duration-200"
-              >
-                📤 Export
-              </button>
+                  {/* Export Button */}
+                  <button
+                    onClick={() => setShowExportModal(true)}
+                    className="px-3 py-2 rounded-md text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors duration-200"
+                  >
+                    📤 Export
+                  </button>
+                </>
+              )}
 
               {/* Theme Toggle Button */}
               <button
@@ -359,24 +392,52 @@ function App() {
             </div>
           </div>
 
-          {/* Mobile Search Bar */}
+          {/* Mobile Tab Navigation */}
           <div className="md:hidden mt-4">
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <span className="text-gray-400">🔍</span>
-              </div>
-              <input
-                type="text"
-                placeholder="Search secrets..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md leading-5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
-              />
+            <div className="flex space-x-1">
+              <button
+                onClick={() => setActiveTab('secrets')}
+                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
+                  activeTab === 'secrets'
+                    ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+              >
+                🔐 Secrets
+              </button>
+              <button
+                onClick={() => setActiveTab('workflow')}
+                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
+                  activeTab === 'workflow'
+                    ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+              >
+                🔄 How It Works
+              </button>
             </div>
           </div>
 
-          {/* Metrics Dashboard */}
-          {showMetrics && metrics.totalSecrets !== undefined && (
+          {/* Mobile Search Bar - only show on secrets tab */}
+          {activeTab === 'secrets' && (
+            <div className="md:hidden mt-4">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <span className="text-gray-400">🔍</span>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search secrets..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md leading-5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Metrics Dashboard - only show on secrets tab */}
+          {activeTab === 'secrets' && showMetrics && metrics.totalSecrets !== undefined && (
             <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
                 <div className="text-sm font-medium text-blue-600 dark:text-blue-400">Total Secrets</div>
@@ -397,14 +458,14 @@ function App() {
             </div>
           )}
 
-          {/* Search Results Info */}
-          {searchQuery && (
+          {/* Search Results Info - only show on secrets tab */}
+          {activeTab === 'secrets' && searchQuery && (
             <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
               Found {Object.keys(filteredSecrets).length} of {Object.keys(secrets).length} secrets matching "{searchQuery}"
             </div>
           )}
 
-          {lastUpdate && (
+          {activeTab === 'secrets' && lastUpdate && (
             <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
               Last update: {formatTimestamp(lastUpdate)}
             </div>
@@ -413,7 +474,9 @@ function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {activeTab === 'secrets' ? (
+          // SECRETS TAB CONTENT
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
           {/* Secrets Panel */}
           <div className="lg:col-span-2">
@@ -575,6 +638,10 @@ function App() {
             </div>
           </div>
         </div>
+        ) : (
+          // WORKFLOW TAB CONTENT
+          <WorkflowDiagram />
+        )}
       </main>
 
       {/* Toast Notifications */}
