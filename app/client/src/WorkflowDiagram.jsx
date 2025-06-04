@@ -95,38 +95,90 @@ spec:
       title: 'React App',
       subtitle: 'Live Updates',
       icon: '⚛️',
-      description: 'Node.js app watches files with Chokidar and pushes updates via WebSocket',
-      details: 'The Node.js server uses Chokidar to watch the secrets directory for file changes. When changes occur, it reads the updated secrets and broadcasts them to connected React clients via WebSocket.',
-      codeTitle: 'File Watching & WebSocket Updates',
-      code: `// Server-side file watching (server.js)
-const chokidar = require('chokidar');
-const watcher = chokidar.watch(SECRETS_DIR, {
-  ignored: /^\\./,
-  persistent: true,
-  ignoreInitial: true
-});
-
-watcher
-  .on('add', path => {
-    const secrets = readSecretsFromDirectory();
-    const entry = addActivityEntry('add', path.basename(path), secrets);
-    io.emit('secrets-update', {
-      secrets,
-      timestamp: new Date().toISOString(),
-      action: 'add',
-      file: path.basename(path)
-    });
-  })
-  .on('change', path => {
-    const secrets = readSecretsFromDirectory();
-    io.emit('secrets-update', { secrets, action: 'change' });
+      description: 'Node.js app uses kubectl monitoring + Chokidar fallback and pushes updates via WebSocket',
+      details: 'The Node.js server primarily uses kubectl to monitor Kubernetes secret changes in real-time, with Chokidar filesystem watching as an intelligent fallback. When changes occur, it reads secrets from the mounted directory (handling Kubernetes projected volumes and symlinks) and broadcasts updates to connected React clients via WebSocket.',
+      codeTitle: 'Smart Secret Monitoring & WebSocket Updates',
+      code: `// Primary: kubectl-based Kubernetes secret monitoring (server.js)
+function startKubectlSecretMonitoring() {
+  # Monitor secret resourceVersion changes in real-time
+  kubectlWatcher = spawn('kubectl', [
+    'get', 'secret', K8S_SECRET_NAME, '-n', K8S_NAMESPACE,
+    '-o', 'jsonpath={.metadata.resourceVersion}{\"\\n\"}', '--watch'
+  ]);
+  
+  kubectlWatcher.stdout.on('data', (data) => {
+    const resourceVersion = data.toString().trim();
+    if (resourceVersion !== lastSecretUpdateTime) {
+      # Kubernetes secret changed - trigger debounced update
+      handleKubectlUpdate();
+    }
   });
+}
+
+# Fallback: Chokidar filesystem monitoring (when kubectl unavailable)
+function startFilesystemMonitoring() {
+  const watcher = chokidar.watch(SECRETS_DIR, {
+    followSymlinks: true,    # Handle K8s projected volume symlinks
+    usePolling: true,        # More reliable for mounted volumes
+    interval: 2000           # Conservative polling for fallback
+  });
+  
+  watcher.on('change', () => {
+    handleSecretUpdate('filesystem-fallback');
+  });
+}
+
+# Read secrets from /secrets directory (handles K8s projected volumes)
+function readSecretsFromDirectory() {
+  const secrets = {};
+  const files = fs.readdirSync(SECRETS_DIR);
+  
+  files.forEach(file => {
+    const filePath = path.join(SECRETS_DIR, file);
+    const stats = fs.lstatSync(filePath);  # Handle symlinks properly
+    
+    if (stats.isFile() || stats.isSymbolicLink()) {
+      # Clear Node.js file cache for fresh reads (important for K8s volumes)
+      delete require.cache[filePath];
+      const content = fs.readFileSync(filePath, 'utf8');
+      
+      secrets[file] = {
+        content: content.trim(),
+        lastModified: stats.mtime.toISOString(),
+        size: stats.size,
+        symlinkTarget: stats.isSymbolicLink() ? fs.readlinkSync(filePath) : null
+      };
+    }
+  });
+  
+  return secrets;
+}
+
+# Debounced update handling for rapid K8s changes
+function handleKubectlUpdate() {
+  pendingUpdateCount++;
+  clearTimeout(updateTimeoutId);
+  
+  updateTimeoutId = setTimeout(() => {
+    # Try immediate read first (some volumes update quickly)
+    const secrets = readSecretsFromDirectory();
+    if (contentChanged(secrets)) {
+      emitSecretsUpdate(secrets, 'kubectl-immediate');
+    } else {
+      # Use retry mechanism for K8s projected volume delays
+      handleSecretUpdateWithRetry('kubectl-detected', 0);
+    }
+  }, 150); # Short debounce window
+}
 
 // Client-side WebSocket handling (App.jsx)
 useEffect(() => {
   const socket = io();
   socket.on('secrets-update', (data) => {
-    setSecrets(data.secrets);
+    # Force UI re-render with deep cloning for reliable updates
+    setSecrets(prevSecrets => ({ 
+      ...JSON.parse(JSON.stringify(data.secrets))
+    }));
     setLastUpdate(data.timestamp);
   });
 }, []);`,
