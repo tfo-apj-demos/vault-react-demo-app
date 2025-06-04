@@ -69,19 +69,25 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-remove notifications
+  // Auto-remove notifications - only set timeout for new notifications
   useEffect(() => {
-    notifications.forEach(notification => {
+    const newNotifications = notifications.filter(n => !n.timeoutSet);
+    newNotifications.forEach(notification => {
       if (notification.id) {
+        // Mark this notification as having a timeout set
+        notification.timeoutSet = true;
         setTimeout(() => {
           setNotifications(prev => prev.filter(n => n.id !== notification.id));
-        }, 5000);
+        }, 8000); // Increased to 8 seconds for better visibility
       }
     });
   }, [notifications]);
 
   useEffect(() => {
     const socket = io();
+    
+    // Store socket instance globally for refresh button access
+    window.socketInstance = socket;
 
     socket.on('connect', () => {
       console.log('Connected to server');
@@ -95,9 +101,38 @@ function App() {
     });
 
     socket.on('secrets-update', (data) => {
-      console.log('Secrets update received:', data);
-      setSecrets(data.secrets);
+      console.log('🔄 Secrets update received:', {
+        source: data.source,
+        forceUpdate: data.forceUpdate,
+        secretCount: Object.keys(data.secrets || {}).length,
+        syncId: data.syncId,
+        timestamp: data.timestamp
+      });
+      
+      // Force state update with completely new object references
+      const newSecrets = JSON.parse(JSON.stringify(data.secrets || {}));
+      setSecrets(newSecrets);
       setLastUpdate(data.timestamp);
+      
+      // Always force filtered secrets update to trigger re-render
+      setFilteredSecrets(prev => {
+        const filtered = searchQuery.trim() ? 
+          Object.fromEntries(
+            Object.entries(newSecrets).filter(([filename, data]) => 
+              filename.toLowerCase().includes(searchQuery.toLowerCase()) || 
+              data.content.toLowerCase().includes(searchQuery.toLowerCase())
+            )
+          ) : newSecrets;
+        return JSON.parse(JSON.stringify(filtered));
+      });
+      
+      // Force re-render by triggering state updates
+      if (data.forceUpdate) {
+        console.log('🔄 Force update applied - UI should refresh now');
+        // Force component re-render by updating multiple states with fresh references
+        setSecretFormat(prev => ({ ...prev }));
+        setError(null); // Clear any previous errors
+      }
       
       // Add notification for secret changes
       if (data.action && data.file) {
@@ -108,22 +143,49 @@ function App() {
         });
       }
       
-      // Add to activity log
-      const activityEntry = {
-        id: Date.now(),
-        timestamp: data.timestamp,
-        action: data.action || 'update',
-        file: data.file || 'multiple files',
-        secretCount: Object.keys(data.secrets).length
-      };
-      
-      setActivity(prev => [activityEntry, ...prev.slice(0, 9)]); // Keep last 10 entries
+      // Skip adding to activity log - the server now handles this properly
+      // Only server-side activity-update events will update the activity feed
+      // This eliminates duplicate and system noise from the client side
     });
 
     socket.on('secrets-error', (data) => {
       console.error('Secrets error:', data);
       setError(data.error);
     });
+
+    // Handle dedicated activity updates from server
+    socket.on('activity-update', (data) => {
+      console.log('Activity update received:', data);
+      if (data.activity) {
+        setActivity(data.activity);
+      } else if (data.newEntry) {
+        // Add new activity entry from server
+        setActivity(prev => [data.newEntry, ...prev.slice(0, 9)]);
+      }
+    });
+
+    // Handle heartbeat for connection health
+    socket.on('heartbeat', (data) => {
+      console.log(`💓 Heartbeat received: ${data.connectedClients} clients, ${data.secretCount} secrets`);
+      // Update connection health
+      setConnected(true);
+      setError(null);
+    });
+
+    // Handle pong responses
+    socket.on('pong', (data) => {
+      console.log('🏓 Pong received from server - connection healthy', {
+        connectedClients: data.connectedClients,
+        timestamp: data.timestamp
+      });
+    });
+
+    // Send periodic ping to maintain connection
+    const pingInterval = setInterval(() => {
+      if (socket.connected) {
+        socket.emit('ping');
+      }
+    }, 30000); // Ping every 30 seconds
 
     // Fetch initial data
     fetch('/api/secrets')
@@ -150,6 +212,10 @@ function App() {
       });
 
     return () => {
+      clearInterval(pingInterval);
+      if (window.socketInstance) {
+        delete window.socketInstance;
+      }
       socket.disconnect();
     };
   }, []);
@@ -320,19 +386,45 @@ function App() {
 
   const getActionColor = (action) => {
     switch (action) {
-      case 'add': return 'text-green-600 bg-green-100';
-      case 'change': return 'text-blue-600 bg-blue-100';
-      case 'remove': return 'text-red-600 bg-red-100';
-      default: return 'text-gray-600 bg-gray-100';
+      case 'add':
+      case 'created': 
+        return 'text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-900';
+      case 'change':
+      case 'updated':
+        return 'text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-900';
+      case 'remove':
+      case 'deleted':
+        return 'text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900';
+      default: 
+        return 'text-gray-600 bg-gray-100 dark:text-gray-400 dark:bg-gray-700';
     }
   };
 
   const getActionIcon = (action) => {
     switch (action) {
-      case 'add': return '+';
-      case 'change': return '~';
-      case 'remove': return '-';
-      default: return '•';
+      case 'add':
+      case 'created': 
+        return '+';
+      case 'change':
+      case 'updated':
+        return '~';
+      case 'remove':
+      case 'deleted':
+        return '-';
+      default: 
+        return '•';
+    }
+  };
+
+  const getActionDescription = (action) => {
+    switch (action) {
+      case 'add': return 'was created';
+      case 'created': return 'was created';
+      case 'change': return 'was updated';
+      case 'updated': return 'was updated';
+      case 'remove': return 'was deleted';
+      case 'deleted': return 'was deleted';
+      default: return 'was changed';
     }
   };
 
@@ -421,6 +513,48 @@ function App() {
                     }`}
                   >
                     📊 Metrics
+                  </button>
+
+                  {/* Refresh Button */}
+                  <button
+                    onClick={() => {
+                      console.log('🔄 Manual refresh triggered');
+                      // Use WebSocket for force refresh if connected
+                      if (connected && window.socketInstance) {
+                        window.socketInstance.emit('force-refresh');
+                        addNotification({
+                          type: 'info',
+                          message: 'Force refresh requested...',
+                          timestamp: new Date().toISOString()
+                        });
+                      } else {
+                        // Fallback to HTTP API
+                        fetch('/api/secrets')
+                          .then(res => res.json())
+                          .then(data => {
+                            const newSecrets = { ...data.secrets };
+                            setSecrets(newSecrets);
+                            setFilteredSecrets(newSecrets);
+                            setLastUpdate(data.timestamp);
+                            addNotification({
+                              type: 'success',
+                              message: 'Secrets refreshed successfully',
+                              timestamp: new Date().toISOString()
+                            });
+                          })
+                          .catch(err => {
+                            console.error('Failed to refresh secrets:', err);
+                            addNotification({
+                              type: 'error',
+                              message: 'Failed to refresh secrets',
+                              timestamp: new Date().toISOString()
+                            });
+                          });
+                      }
+                    }}
+                    className="px-3 py-2 rounded-md text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors duration-200"
+                  >
+                    🔄 Refresh
                   </button>
 
                   {/* Export Button */}
@@ -657,13 +791,13 @@ function App() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm text-gray-900 dark:text-white">
-                            <span className="font-medium break-words">{entry.file}</span> was{' '}
-                            <span className={getActionColor(entry.action).split(' ')[0]}>
-                              {entry.action === 'change' ? 'modified' : entry.action === 'add' ? 'added' : 'removed'}
+                            <span className="font-medium break-words">{entry.file}</span>{' '}
+                            <span className={`${getActionColor(entry.action).split(' ')[0]} font-medium`}>
+                              {getActionDescription(entry.action)}
                             </span>
                           </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {formatTimestamp(entry.timestamp)} • {entry.secretCount} total secrets
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            {formatTimestamp(entry.timestamp)} • {entry.secretCount} total secret{entry.secretCount !== 1 ? 's' : ''}
                           </div>
                         </div>
                       </div>
@@ -675,27 +809,77 @@ function App() {
             
             {/* Info Panel */}
             <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 rounded-lg p-6 transition-colors duration-200">
-              <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3">How it works</h3>
+              <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3 flex items-center">
+                <span className="mr-2">🔄</span>
+                How secret propagation works
+              </h3>
               <div className="space-y-2 text-xs text-blue-800 dark:text-blue-200">
                 <div className="flex items-center space-x-2">
-                  <span className="text-blue-500 dark:text-blue-400">1.</span>
-                  <span>VSO pulls from Vault every 30s</span>
+                  <span className="text-blue-500 dark:text-blue-400 font-mono text-xs">1.</span>
+                  <span>VSO polls Vault for changes (configurable interval)</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="text-blue-500 dark:text-blue-400">2.</span>
-                  <span>Updates Kubernetes Secret</span>
+                  <span className="text-blue-500 dark:text-blue-400 font-mono text-xs">2.</span>
+                  <span>Updates Kubernetes Secret via K8s API</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="text-blue-500 dark:text-blue-400">3.</span>
-                  <span>Projected as files in /secrets</span>
+                  <span className="text-blue-500 dark:text-blue-400 font-mono text-xs">3.</span>
+                  <span>kubelet syncs projected volume files (async)</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="text-blue-500 dark:text-blue-400">4.</span>
-                  <span>Chokidar watches & pushes via WebSocket</span>
+                  <span className="text-blue-500 dark:text-blue-400 font-mono text-xs">4.</span>
+                  <span>kubectl monitoring detects resourceVersion change</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="text-blue-500 dark:text-blue-400">5.</span>
-                  <span>React updates live—no refresh!</span>
+                  <span className="text-blue-500 dark:text-blue-400 font-mono text-xs">5.</span>
+                  <span>App reads files & broadcasts via WebSocket</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-blue-500 dark:text-blue-400 font-mono text-xs">6.</span>
+                  <span>React UI updates automatically—no refresh!</span>
+                </div>
+              </div>
+              
+              {/* Timing Details */}
+              <div className="mt-4 pt-3 border-t border-blue-200 dark:border-blue-700">
+                <h4 className="text-xs font-semibold text-blue-900 dark:text-blue-100 mb-2 flex items-center">
+                  <span className="mr-1">⏰</span>
+                  Typical timing in Kubernetes
+                </h4>
+                <div className="space-y-1 text-xs text-blue-700 dark:text-blue-300">
+                  <div className="flex justify-between">
+                    <span>End-to-end propagation:</span>
+                    <span className="font-mono text-amber-600 dark:text-amber-400">30-90s</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>VSO sync cycle:</span>
+                    <span className="font-mono text-blue-600 dark:text-blue-400">10-30s</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Projected volume sync:</span>
+                    <span className="font-mono text-orange-600 dark:text-orange-400">10-60s</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>App detection & update:</span>
+                    <span className="font-mono text-green-600 dark:text-green-400">&lt;5s</span>
+                  </div>
+                </div>
+                
+                {/* Educational Note */}
+                <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-700">
+                  <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
+                    <span className="font-semibold">⚠️ Important:</span> These delays are <em>normal and expected</em> in production Kubernetes environments. 
+                    The projected volume synchronization involves multiple layers:
+                  </p>
+                  <ul className="text-xs text-amber-700 dark:text-amber-300 mt-2 space-y-1 ml-4">
+                    <li>• kubelet polling intervals for secret updates</li>
+                    <li>• Node filesystem cache clearing and symlink updates</li>
+                    <li>• Container runtime volume mount propagation</li>
+                  </ul>
+                  <p className="text-xs text-amber-800 dark:text-amber-200 mt-2">
+                    Design your applications to handle these timing windows gracefully. In this demo, VSO uses a 2s refresh 
+                    for demonstration—production should use 30s+ intervals.
+                  </p>
                 </div>
               </div>
             </div>
@@ -708,66 +892,72 @@ function App() {
       </main>
 
       {/* Toast Notifications */}
-      <div className="fixed top-4 right-4 z-50 space-y-2">
+      <div className="fixed inset-x-0 top-0 flex justify-end p-4 z-50 pointer-events-none" style={{ paddingTop: '140px' }}>
+        <div className="space-y-2 max-w-sm pointer-events-auto">
         {notifications.map((notification) => (
           <div
             key={notification.id}
-            className={`max-w-sm w-full bg-white dark:bg-gray-800 shadow-lg rounded-lg pointer-events-auto ring-1 ring-black ring-opacity-5 transform transition-all duration-300 ${
+            className={`w-full bg-white dark:bg-gray-800 shadow-xl rounded-lg pointer-events-auto ring-1 ring-black ring-opacity-5 overflow-hidden transform transition-all duration-500 ease-in-out slide-in-right ${
               notification.type === 'success' ? 'border-l-4 border-green-500' :
               notification.type === 'warning' ? 'border-l-4 border-orange-500' :
               notification.type === 'error' ? 'border-l-4 border-red-500' :
               'border-l-4 border-blue-500'
             }`}
+            style={{
+              animation: 'slideInRight 0.3s ease-out, fadeIn 0.3s ease-out'
+            }}
           >
             <div className="p-4">
               <div className="flex items-start">
                 <div className="flex-shrink-0">
-                  <span className="text-lg">
+                  <span className="text-xl">
                     {notification.type === 'success' ? '✅' :
                      notification.type === 'warning' ? '⚠️' :
                      notification.type === 'error' ? '❌' : 'ℹ️'}
                   </span>
                 </div>
-                <div className="ml-3 w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">
+                <div className="ml-3 w-0 flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white break-words overflow-wrap-anywhere">
                     {notification.message}
                   </p>
                   {notification.timestamp && (
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 break-words">
                       {formatTimestamp(notification.timestamp)}
                     </p>
                   )}
                 </div>
                 <div className="ml-4 flex-shrink-0 flex">
                   <button
-                    className="rounded-md inline-flex text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 focus:outline-none"
+                    className="rounded-md inline-flex text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 focus:outline-none transition-colors duration-200"
                     onClick={() => setNotifications(prev => prev.filter(n => n.id !== notification.id))}
                   >
                     <span className="sr-only">Close</span>
-                    <span className="text-lg">×</span>
+                    <span className="text-lg font-bold">×</span>
                   </button>
                 </div>
               </div>
             </div>
           </div>
         ))}
+        </div>
       </div>
 
       {/* Export Modal */}
       {showExportModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowExportModal(false)}></div>
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity modal-backdrop" onClick={() => setShowExportModal(false)}></div>
             
-            <span className="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+            {/* This element is to trick the browser into centering the modal contents. */}
+            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
             
-            <div className="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+            <div className="relative inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
               <div className="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                 <div className="sm:flex sm:items-start">
                   <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 dark:bg-blue-900 sm:mx-0 sm:h-10 sm:w-10">
                     <span className="text-blue-600 dark:text-blue-400 text-xl">📤</span>
                   </div>
-                  <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                  <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
                     <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-white">
                       Export Secrets
                     </h3>
@@ -779,39 +969,41 @@ function App() {
                   </div>
                 </div>
                 
-                <div className="mt-6 space-y-3">
-                  <button
-                    onClick={() => { exportSecrets('json'); setShowExportModal(false); }}
-                    className="w-full flex items-center px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
-                  >
-                    <span className="mr-3 text-lg">📋</span>
-                    <div className="text-left">
-                      <div className="font-medium text-gray-900 dark:text-white">JSON Format</div>
-                      <div className="text-sm text-gray-500 dark:text-gray-400">Complete data with metadata</div>
-                    </div>
-                  </button>
-                  
-                  <button
-                    onClick={() => { exportSecrets('yaml'); setShowExportModal(false); }}
-                    className="w-full flex items-center px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
-                  >
-                    <span className="mr-3 text-lg">📄</span>
-                    <div className="text-left">
-                      <div className="font-medium text-gray-900 dark:text-white">YAML Format</div>
-                      <div className="text-sm text-gray-500 dark:text-gray-400">Human-readable format</div>
-                    </div>
-                  </button>
-                  
-                  <button
-                    onClick={() => { exportSecrets('csv'); setShowExportModal(false); }}
-                    className="w-full flex items-center px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
-                  >
-                    <span className="mr-3 text-lg">📊</span>
-                    <div className="text-left">
-                      <div className="font-medium text-gray-900 dark:text-white">CSV Format</div>
-                      <div className="text-sm text-gray-500 dark:text-gray-400">Spreadsheet compatible</div>
-                    </div>
-                  </button>
+                <div className="mt-5 sm:mt-6">
+                  <div className="space-y-3">
+                    <button
+                      onClick={() => { exportSecrets('json'); setShowExportModal(false); }}
+                      className="w-full flex items-center px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
+                    >
+                      <span className="mr-3 text-lg flex-shrink-0">📋</span>
+                      <div className="text-left flex-1">
+                        <div className="font-medium text-gray-900 dark:text-white">JSON Format</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">Complete data with metadata</div>
+                      </div>
+                    </button>
+                    
+                    <button
+                      onClick={() => { exportSecrets('yaml'); setShowExportModal(false); }}
+                      className="w-full flex items-center px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
+                    >
+                      <span className="mr-3 text-lg flex-shrink-0">📄</span>
+                      <div className="text-left flex-1">
+                        <div className="font-medium text-gray-900 dark:text-white">YAML Format</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">Human-readable format</div>
+                      </div>
+                    </button>
+                    
+                    <button
+                      onClick={() => { exportSecrets('csv'); setShowExportModal(false); }}
+                      className="w-full flex items-center px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
+                    >
+                      <span className="mr-3 text-lg flex-shrink-0">📊</span>
+                      <div className="text-left flex-1">
+                        <div className="font-medium text-gray-900 dark:text-white">CSV Format</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">Spreadsheet compatible</div>
+                      </div>
+                    </button>
+                  </div>
                 </div>
               </div>
               
