@@ -279,9 +279,9 @@ useEffect(() => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md">
             <div className="text-2xl mb-3">⚡</div>
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Real-time Updates</h3>
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Live Updates</h3>
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              Changes in Vault are reflected in the UI within 2 seconds using file watching and WebSockets.
+              Changes in Vault propagate to the UI in 30-90 seconds through the complete Kubernetes secret management pipeline.
             </p>
           </div>
           
@@ -303,11 +303,167 @@ useEffect(() => {
         </div>
       </div>
 
+      {/* Timing & Delays Education Section */}
+      <div className="mt-12 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 rounded-xl p-8 border border-amber-200 dark:border-amber-700">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6 text-center flex items-center justify-center">
+          ⏰ Understanding Timing & Delays
+        </h2>
+        
+        <div className="max-w-4xl mx-auto">
+          <p className="text-gray-700 dark:text-gray-300 mb-6 text-center leading-relaxed">
+            <strong>Important:</strong> Delays are normal and expected in Kubernetes environments. Understanding these timing windows 
+            helps set proper expectations for secret propagation in production environments.
+          </p>
+          
+          {/* Timing Breakdown */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md border border-amber-200 dark:border-amber-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                📊 Typical Timing Breakdown
+              </h3>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center py-2 border-b border-gray-200 dark:border-gray-600">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">VSO sync cycle:</span>
+                  <span className="text-sm font-mono bg-blue-100 dark:bg-blue-900 px-2 py-1 rounded text-blue-800 dark:text-blue-200">10-30s</span>
+                </div>
+                <div className="flex justify-between items-center py-2 border-b border-gray-200 dark:border-gray-600">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">K8s secret update:</span>
+                  <span className="text-sm font-mono bg-green-100 dark:bg-green-900 px-2 py-1 rounded text-green-800 dark:text-green-200">&lt;1s</span>
+                </div>
+                <div className="flex justify-between items-center py-2 border-b border-gray-200 dark:border-gray-600">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Projected volume sync:</span>
+                  <span className="text-sm font-mono bg-orange-100 dark:bg-orange-900 px-2 py-1 rounded text-orange-800 dark:text-orange-200">10-60s</span>
+                </div>
+                <div className="flex justify-between items-center py-2">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">App detection:</span>
+                  <span className="text-sm font-mono bg-purple-100 dark:bg-purple-900 px-2 py-1 rounded text-purple-800 dark:text-purple-200">&lt;5s</span>
+                </div>
+              </div>
+              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-bold text-gray-900 dark:text-white">Total end-to-end:</span>
+                  <span className="text-sm font-mono font-bold bg-amber-100 dark:bg-amber-900 px-2 py-1 rounded text-amber-800 dark:text-amber-200">30-90s</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md border border-amber-200 dark:border-amber-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                🔍 What Causes Delays?
+              </h3>
+              <div className="space-y-4">
+                <div className="flex items-start space-x-3">
+                  <div className="w-6 h-6 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-xs text-blue-600 dark:text-blue-300 font-bold">1</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">VSO Polling</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">VSO checks Vault at configured intervals (refreshAfter)</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start space-x-3">
+                  <div className="w-6 h-6 bg-orange-100 dark:bg-orange-900 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-xs text-orange-600 dark:text-orange-300 font-bold">2</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Projected Volumes</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Kubernetes kubelet updates mounted files asynchronously</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start space-x-3">
+                  <div className="w-6 h-6 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-xs text-purple-600 dark:text-purple-300 font-bold">3</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">File System Sync</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Node filesystem cache clearing and symlink updates</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Best Practices */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md border border-amber-200 dark:border-amber-700 mb-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+              💡 Production Best Practices
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Timing Configuration:</h4>
+                <ul className="text-xs space-y-2 text-gray-600 dark:text-gray-400">
+                  <li className="flex items-start space-x-2">
+                    <span className="text-green-500 dark:text-green-400 font-bold">✓</span>
+                    <span>Set VSO <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">refreshAfter</code> to 30s+ for production</span>
+                  </li>
+                  <li className="flex items-start space-x-2">
+                    <span className="text-green-500 dark:text-green-400 font-bold">✓</span>
+                    <span>Plan for 60-120s end-to-end propagation times</span>
+                  </li>
+                  <li className="flex items-start space-x-2">
+                    <span className="text-green-500 dark:text-green-400 font-bold">✓</span>
+                    <span>Use health checks with appropriate grace periods</span>
+                  </li>
+                </ul>
+              </div>
+              
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Application Design:</h4>
+                <ul className="text-xs space-y-2 text-gray-600 dark:text-gray-400">
+                  <li className="flex items-start space-x-2">
+                    <span className="text-green-500 dark:text-green-400 font-bold">✓</span>
+                    <span>Implement graceful secret rotation handling</span>
+                  </li>
+                  <li className="flex items-start space-x-2">
+                    <span className="text-green-500 dark:text-green-400 font-bold">✓</span>
+                    <span>Cache secrets appropriately to handle delays</span>
+                  </li>
+                  <li className="flex items-start space-x-2">
+                    <span className="text-green-500 dark:text-green-400 font-bold">✓</span>
+                    <span>Monitor secret age and freshness</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          {/* Demo vs Production */}
+          <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-lg p-6 border border-blue-200 dark:border-blue-700">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+              🎯 Demo vs Production Configuration
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h4 className="text-sm font-semibold text-orange-600 dark:text-orange-400 mb-2">This Demo (Fast):</h4>
+                <ul className="text-xs space-y-1 text-gray-600 dark:text-gray-400">
+                  <li>• VSO refreshAfter: <code className="bg-orange-100 dark:bg-orange-900 px-1 rounded">2s</code></li>
+                  <li>• Fast refresh for demonstration</li>
+                  <li>• Optimized for immediate feedback</li>
+                  <li>• Not suitable for production load</li>
+                </ul>
+              </div>
+              
+              <div>
+                <h4 className="text-sm font-semibold text-green-600 dark:text-green-400 mb-2">Production (Stable):</h4>
+                <ul className="text-xs space-y-1 text-gray-600 dark:text-gray-400">
+                  <li>• VSO refreshAfter: <code className="bg-green-100 dark:bg-green-900 px-1 rounded">30s-300s</code></li>
+                  <li>• Balanced performance and freshness</li>
+                  <li>• Reduced API load on Vault</li>
+                  <li>• Suitable for production workloads</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Technical Details */}
       <div className="mt-8 text-center">
         <p className="text-sm text-gray-500 dark:text-gray-400">
           💡 <strong>Pro Tip:</strong> Click on any step above to see the relevant configuration and code.
-          The refresh rate is set to 2 seconds for demo purposes - in production, you might use longer intervals.
+          Understanding these timing patterns helps you design resilient applications that work well with Kubernetes secret management.
         </p>
       </div>
     </div>
