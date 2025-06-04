@@ -26,8 +26,13 @@ RUN npm install --only=production
 # Stage 3: Final runtime image
 FROM node:20-alpine
 
-# Install dumb-init for proper signal handling
-RUN apk add --no-cache dumb-init
+# Install dumb-init and kubectl for proper signal handling and Kubernetes monitoring
+RUN apk add --no-cache dumb-init curl && \
+    ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/') && \
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/${ARCH}/kubectl" && \
+    chmod +x kubectl && \
+    mv kubectl /usr/local/bin/ && \
+    apk del curl
 
 # Create app directory and user
 WORKDIR /app
