@@ -157,12 +157,12 @@ useEffect(() => {
       {/* Main Workflow Diagram */}
       <div className="relative">
         {/* Steps Container */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-12 items-center">
           {steps.map((step, index) => (
-            <div key={step.id} className="relative">
+            <div key={step.id} className="relative flex flex-col h-full">
               {/* Step Card */}
               <div
-                className={`relative bg-white dark:bg-gray-800 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 border-2 cursor-pointer transform hover:scale-105 ${
+                className={`relative bg-white dark:bg-gray-800 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 border-2 cursor-pointer transform hover:scale-105 flex-1 ${
                   selectedStep === step.id ? step.borderColor : 'border-transparent hover:border-gray-300 dark:hover:border-gray-600'
                 }`}
                 onClick={() => setSelectedStep(selectedStep === step.id ? null : step.id)}
@@ -170,7 +170,7 @@ useEffect(() => {
                 {/* Gradient Header */}
                 <div className={`h-2 rounded-t-xl bg-gradient-to-r ${step.color}`}></div>
                 
-                <div className="p-6">
+                <div className="p-6 flex flex-col h-full">
                   {/* Icon and Title */}
                   <div className="text-center mb-4">
                     <div className="text-4xl mb-2">{step.icon}</div>
@@ -183,7 +183,7 @@ useEffect(() => {
                   </div>
 
                   {/* Description */}
-                  <p className="text-sm text-gray-600 dark:text-gray-300 text-center">
+                  <p className="text-sm text-gray-600 dark:text-gray-300 text-center flex-1">
                     {step.description}
                   </p>
 
@@ -196,12 +196,12 @@ useEffect(() => {
 
               {/* Connection Arrow (not for last item) */}
               {index < steps.length - 1 && (
-                <div className="hidden lg:block absolute top-1/2 -right-4 transform -translate-y-1/2 z-10">
+                <div className="hidden lg:flex absolute top-1/2 -right-6 transform -translate-y-1/2 z-10 items-center">
                   <div className="flex items-center">
-                    <div className="w-8 h-0.5 bg-gradient-to-r from-gray-400 to-gray-600 dark:from-gray-500 dark:to-gray-400"></div>
-                    <div className="text-gray-600 dark:text-gray-400 text-xl">→</div>
+                    <div className="w-10 h-0.5 bg-gradient-to-r from-gray-400 to-gray-600 dark:from-gray-500 dark:to-gray-400"></div>
+                    <div className="text-gray-600 dark:text-gray-400 text-xl ml-1">→</div>
                   </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 whitespace-nowrap">
+                  <div className="absolute top-6 left-0 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap text-center w-full">
                     {connections[index]?.label}
                   </div>
                 </div>
