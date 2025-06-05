@@ -893,7 +893,7 @@ function App() {
 
       {/* Toast Notifications */}
       <div className="fixed inset-x-0 top-0 flex justify-end p-4 z-50 pointer-events-none" style={{ paddingTop: '140px' }}>
-        <div className="space-y-2 max-w-sm pointer-events-auto">
+        <div className="space-y-2 max-w-md pointer-events-auto">
         {notifications.map((notification) => (
           <div
             key={notification.id}
@@ -904,24 +904,26 @@ function App() {
               'border-l-4 border-blue-500'
             }`}
             style={{
-              animation: 'slideInRight 0.3s ease-out, fadeIn 0.3s ease-out'
+              animation: 'slideInRight 0.3s ease-out, fadeIn 0.3s ease-out',
+              minHeight: '100px',
+              width: '400px'
             }}
           >
-            <div className="p-4">
+            <div className="p-6">
               <div className="flex items-start">
                 <div className="flex-shrink-0">
-                  <span className="text-xl">
+                  <span className="text-2xl">
                     {notification.type === 'success' ? '✅' :
                      notification.type === 'warning' ? '⚠️' :
                      notification.type === 'error' ? '❌' : 'ℹ️'}
                   </span>
                 </div>
-                <div className="ml-3 w-0 flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white break-words overflow-wrap-anywhere">
+                <div className="ml-4 w-0 flex-1 min-w-0">
+                  <p className="text-base font-semibold text-gray-900 dark:text-white break-words overflow-wrap-anywhere leading-relaxed">
                     {notification.message}
                   </p>
                   {notification.timestamp && (
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 break-words">
+                    <p className="mt-2 text-sm text-gray-500 dark:text-gray-400 break-words">
                       {formatTimestamp(notification.timestamp)}
                     </p>
                   )}
@@ -932,7 +934,7 @@ function App() {
                     onClick={() => setNotifications(prev => prev.filter(n => n.id !== notification.id))}
                   >
                     <span className="sr-only">Close</span>
-                    <span className="text-lg font-bold">×</span>
+                    <span className="text-xl font-bold">×</span>
                   </button>
                 </div>
               </div>
