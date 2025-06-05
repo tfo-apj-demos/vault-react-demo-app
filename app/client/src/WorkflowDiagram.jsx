@@ -206,91 +206,149 @@ useEffect(() => {
         </p>
       </div>
 
-      {/* Main Workflow Diagram */}
-      <div className="relative">
-        {/* Steps Container */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-12 items-center">
+      {/* Modern Timeline Workflow */}
+      <div className="max-w-6xl mx-auto">
+        {/* Desktop Timeline Layout */}
+        <div className="hidden lg:block">
+          {/* Timeline Container */}
+          <div className="relative">
+            {/* Main Timeline Line */}
+            <div className="absolute top-16 left-16 right-16 h-1 bg-gradient-to-r from-yellow-400 via-blue-500 via-green-500 to-purple-500 rounded-full shadow-lg"></div>
+            
+            {/* Timeline Steps */}
+            <div className="grid grid-cols-4 gap-0 relative">
+              {steps.map((step, index) => (
+                <div key={step.id} className="relative flex flex-col items-center">
+                  {/* Timeline Node - Larger with bigger numbers */}
+                  <div className={`w-12 h-12 rounded-full bg-gradient-to-r ${step.color} shadow-lg border-4 border-white dark:border-gray-900 mb-6 z-10 relative`}>
+                    <div className="absolute inset-0 rounded-full bg-white dark:bg-gray-900 scale-75 flex items-center justify-center">
+                      <div className="text-lg font-bold text-gray-900 dark:text-white">{index + 1}</div>
+                    </div>
+                  </div>
+                  
+                  {/* Connection Labels */}
+                  {index < steps.length - 1 && (
+                    <div className="absolute top-8 left-full transform translate-x-4 -translate-y-1/2 z-20">
+                      <div className={`px-3 py-1 rounded-full text-xs font-medium shadow-md border ${
+                        index === 0 ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-700' :
+                        index === 1 ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-700' :
+                        'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-700'
+                      }`}>
+                        {connections[index].label}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Step Card - Fixed consistent height */}
+                  <div
+                    className={`bg-white dark:bg-gray-800 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 cursor-pointer transform hover:scale-105 w-full max-w-xs min-h-[280px] flex flex-col ${
+                      selectedStep === step.id ? step.borderColor : 'border-transparent hover:border-gray-300 dark:hover:border-gray-600'
+                    }`}
+                    onClick={() => setSelectedStep(selectedStep === step.id ? null : step.id)}
+                  >
+                    {/* Gradient Header */}
+                    <div className={`h-3 rounded-t-2xl bg-gradient-to-r ${step.color}`}></div>
+                    
+                    <div className="p-6 flex flex-col flex-1">
+                      {/* Icon and Title */}
+                      <div className="text-center mb-4">
+                        <div className="text-5xl mb-3">{step.icon}</div>
+                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
+                          {step.title}
+                        </h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">
+                          {step.subtitle}
+                        </p>
+                      </div>
+
+                      {/* Description - Flex grow to fill remaining space */}
+                      <p className="text-sm text-gray-600 dark:text-gray-300 text-center leading-relaxed flex-1 flex items-center justify-center">
+                        {step.description}
+                      </p>
+                    </div>
+
+                    {/* Click Indicator */}
+                    <div className="absolute bottom-4 right-4 text-gray-400 dark:text-gray-500">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile/Tablet Vertical Layout */}
+        <div className="lg:hidden space-y-8">
           {steps.map((step, index) => (
-            <div key={step.id} className="relative flex flex-col h-full">
-              {/* Step Card */}
+            <div key={step.id} className="relative">
+              {/* Step Card - Consistent height for mobile too */}
               <div
-                className={`relative bg-white dark:bg-gray-800 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 border-2 cursor-pointer transform hover:scale-105 flex-1 ${
+                className={`bg-white dark:bg-gray-800 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 border-2 cursor-pointer min-h-[280px] flex flex-col ${
                   selectedStep === step.id ? step.borderColor : 'border-transparent hover:border-gray-300 dark:hover:border-gray-600'
                 }`}
                 onClick={() => setSelectedStep(selectedStep === step.id ? null : step.id)}
               >
                 {/* Gradient Header */}
-                <div className={`h-2 rounded-t-xl bg-gradient-to-r ${step.color}`}></div>
+                <div className={`h-3 rounded-t-2xl bg-gradient-to-r ${step.color}`}></div>
                 
-                <div className="p-6 flex flex-col h-full">
+                <div className="p-6 flex flex-col flex-1">
+                  {/* Step Number Badge - Larger for better visibility */}
+                  <div className="absolute -top-5 -left-5 w-12 h-12 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-full flex items-center justify-center text-xl font-bold shadow-lg">
+                    {index + 1}
+                  </div>
+                  
                   {/* Icon and Title */}
                   <div className="text-center mb-4">
-                    <div className="text-4xl mb-2">{step.icon}</div>
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    <div className="text-5xl mb-3">{step.icon}</div>
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
                       {step.title}
                     </h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">
                       {step.subtitle}
                     </p>
                   </div>
 
-                  {/* Description */}
-                  <p className="text-sm text-gray-600 dark:text-gray-300 text-center flex-1">
+                  {/* Description - Flex grow to fill remaining space */}
+                  <p className="text-sm text-gray-600 dark:text-gray-300 text-center leading-relaxed flex-1 flex items-center justify-center">
                     {step.description}
                   </p>
+                </div>
 
-                  {/* Step Number */}
-                  <div className="absolute -top-3 -left-3 w-8 h-8 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-full flex items-center justify-center text-sm font-bold">
-                    {index + 1}
-                  </div>
+                {/* Click Indicator */}
+                <div className="absolute bottom-4 right-4 text-gray-400 dark:text-gray-500">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
 
-        {/* Seamless Flow Arrows - Desktop Only - Positioned in gaps between boxes */}
-        <div className="hidden lg:block absolute inset-0 pointer-events-none">
-          {/* Arrow 1: Vault → VSO (between columns 1 and 2) */}
-          <div className="absolute top-1/2 left-1/4 transform -translate-y-1/2 translate-x-4 flex flex-col items-center">
-            <div className="flex items-center mb-2">
-              <div className="w-12 h-0.5 bg-blue-500 dark:bg-blue-400"></div>
-              <div className="w-0 h-0 border-l-[10px] border-l-blue-500 dark:border-l-blue-400 border-y-[5px] border-y-transparent"></div>
-            </div>
-            <div className="text-xs text-blue-600 dark:text-blue-400 font-medium whitespace-nowrap bg-white dark:bg-gray-900 px-2 py-1 rounded shadow-sm">
-              Vault API
-            </div>
-          </div>
-
-          {/* Arrow 2: VSO → K8s Secret (between columns 2 and 3) */}
-          <div className="absolute top-1/2 left-2/4 transform -translate-y-1/2 translate-x-4 flex flex-col items-center">
-            <div className="flex items-center mb-2">
-              <div className="w-12 h-0.5 bg-green-500 dark:bg-green-400"></div>
-              <div className="w-0 h-0 border-l-[10px] border-l-green-500 dark:border-l-green-400 border-y-[5px] border-y-transparent"></div>
-            </div>
-            <div className="text-xs text-green-600 dark:text-green-400 font-medium whitespace-nowrap bg-white dark:bg-gray-900 px-2 py-1 rounded shadow-sm">
-              K8s API
-            </div>
-          </div>
-
-          {/* Arrow 3: K8s Secret → App (between columns 3 and 4) */}
-          <div className="absolute top-1/2 left-3/4 transform -translate-y-1/2 translate-x-4 flex flex-col items-center">
-            <div className="flex items-center mb-2">
-              <div className="w-12 h-0.5 bg-purple-500 dark:bg-purple-400"></div>
-              <div className="w-0 h-0 border-l-[10px] border-l-purple-500 dark:border-l-purple-400 border-y-[5px] border-y-transparent"></div>
-            </div>
-            <div className="text-xs text-purple-600 dark:text-purple-400 font-medium whitespace-nowrap bg-white dark:bg-gray-900 px-2 py-1 rounded shadow-sm">
-              File System
-            </div>
-          </div>
-        </div>
-
-        {/* Mobile Connection Indicators */}
-        <div className="lg:hidden flex justify-center items-center space-x-4 mb-8">
-          {connections.map((conn, index) => (
-            <div key={index} className="flex items-center space-x-2">
-              <div className="text-gray-600 dark:text-gray-400 text-2xl">↓</div>
-              <span className="text-xs text-gray-500 dark:text-gray-400">{conn.label}</span>
+              {/* Mobile Connection Arrow */}
+              {index < steps.length - 1 && (
+                <div className="flex justify-center items-center py-4">
+                  <div className="flex flex-col items-center space-y-2">
+                    <div className={`w-12 h-0.5 ${
+                      index === 0 ? 'bg-blue-500 dark:bg-blue-400' :
+                      index === 1 ? 'bg-green-500 dark:bg-green-400' :
+                      'bg-purple-500 dark:bg-purple-400'
+                    } transform rotate-90`}></div>
+                    <div className={`w-0 h-0 border-t-[8px] border-x-[4px] border-x-transparent ${
+                      index === 0 ? 'border-t-blue-500 dark:border-t-blue-400' :
+                      index === 1 ? 'border-t-green-500 dark:border-t-green-400' :
+                      'border-t-purple-500 dark:border-t-purple-400'
+                    }`}></div>
+                    <div className={`px-3 py-1 rounded-full text-xs font-medium shadow-md border ${
+                      index === 0 ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-700' :
+                      index === 1 ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-700' :
+                      'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-700'
+                    }`}>
+                      {connections[index].label}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
