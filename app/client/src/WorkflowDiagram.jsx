@@ -24,19 +24,19 @@ export default function WorkflowDiagram() {
     const patterns = [
       // Comments (highest priority)
       { regex: /(#[^\n]*)/g, className: 'text-green-400 italic' },
-      // YAML/JSON keys (improved pattern for nested keys)
-      { regex: /^(\s*)([a-zA-Z_][a-zA-Z0-9_-]*)\s*:/g, className: 'text-blue-300 font-medium', keepIndent: true },
-      // YAML values after colon
-      { regex: /:\s+([^\s#]+)/g, className: 'text-yellow-300', group: 1 },
-      // Strings in quotes
+      // Strings in quotes (high priority to avoid conflicts)
       { regex: /("[^"]*")/g, className: 'text-yellow-300' },
+      // YAML keys with colon (keep the colon visible)
+      { regex: /^(\s*)([a-zA-Z_][a-zA-Z0-9_-]*)\s*(:)/g, className: 'text-blue-300 font-medium', keepIndent: true, includeColon: true },
+      // YAML values after colon (but not comments)
+      { regex: /:\s+([^#\n]+?)(?=\s*#|$)/g, className: 'text-yellow-300', group: 1 },
       // Shell commands and YAML keywords
       { regex: /\b(vault|kubectl|apiVersion|kind|metadata|spec|mount|type|name|namespace|vaultAuthRef|path|destination|create|refreshAfter|kv-v2|sources|secret|projected|volumeMounts|mountPath|readOnly|containers|template)\b/g, className: 'text-purple-400 font-semibold' },
       // JavaScript keywords
       { regex: /\b(function|const|let|var|if|else|return|spawn|setTimeout|useEffect|forEach|require|module|exports)\b/g, className: 'text-pink-400 font-medium' },
       // Numbers and time values
       { regex: /\b(\d+[a-zA-Z]*|true|false)\b/g, className: 'text-orange-400' },
-      // Operators
+      // Operators (but not colons in YAML)
       { regex: /([=<>!&|+\-*\/])/g, className: 'text-cyan-400' }
     ];
     
@@ -45,8 +45,17 @@ export default function WorkflowDiagram() {
     patterns.forEach(pattern => {
       let match;
       while ((match = pattern.regex.exec(line)) !== null) {
-        // Handle special cases for YAML keys with indentation
-        if (pattern.keepIndent) {
+        // Handle special cases for YAML keys with indentation and colon
+        if (pattern.keepIndent && pattern.includeColon) {
+          // Include both the key and the colon, but skip indentation
+          matches.push({
+            start: match.index + match[1].length, // Skip indentation
+            end: match.index + match[1].length + match[2].length + match[3].length, // Include key + colon
+            text: match[2] + match[3], // key + colon
+            className: pattern.className,
+            fullMatch: match[0]
+          });
+        } else if (pattern.keepIndent) {
           matches.push({
             start: match.index + match[1].length, // Skip indentation
             end: match.index + match[1].length + match[2].length,
@@ -157,7 +166,7 @@ spec:
   destination:
     name: vault-web-secrets  # K8s secret name
     create: true            # Auto-create secret
-  refreshAfter: 2s          # Sync frequency`,
+  refreshAfter: 10s          # Sync frequency`,
       color: 'from-blue-400 to-blue-600',
       borderColor: 'border-blue-500'
     },
