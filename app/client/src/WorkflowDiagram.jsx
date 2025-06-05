@@ -209,7 +209,7 @@ useEffect(() => {
       {/* Main Workflow Diagram */}
       <div className="relative">
         {/* Steps Container */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-12 items-center">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-12 items-center">
           {steps.map((step, index) => (
             <div key={step.id} className="relative flex flex-col h-full">
               {/* Step Card */}
@@ -245,21 +245,44 @@ useEffect(() => {
                   </div>
                 </div>
               </div>
-
-              {/* Connection Arrow (not for last item) */}
-              {index < steps.length - 1 && (
-                <div className="hidden lg:flex absolute top-1/2 -right-6 transform -translate-y-1/2 z-10 items-center">
-                  <div className="flex items-center">
-                    <div className="w-10 h-0.5 bg-gradient-to-r from-gray-400 to-gray-600 dark:from-gray-500 dark:to-gray-400"></div>
-                    <div className="text-gray-600 dark:text-gray-400 text-xl ml-1">→</div>
-                  </div>
-                  <div className="absolute top-6 left-0 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap text-center w-full">
-                    {connections[index]?.label}
-                  </div>
-                </div>
-              )}
             </div>
           ))}
+        </div>
+
+        {/* Seamless Flow Arrows - Desktop Only - Positioned in gaps between boxes */}
+        <div className="hidden lg:block absolute inset-0 pointer-events-none">
+          {/* Arrow 1: Vault → VSO (between columns 1 and 2) */}
+          <div className="absolute top-1/2 left-1/4 transform -translate-y-1/2 translate-x-4 flex flex-col items-center">
+            <div className="flex items-center mb-2">
+              <div className="w-12 h-0.5 bg-blue-500 dark:bg-blue-400"></div>
+              <div className="w-0 h-0 border-l-[10px] border-l-blue-500 dark:border-l-blue-400 border-y-[5px] border-y-transparent"></div>
+            </div>
+            <div className="text-xs text-blue-600 dark:text-blue-400 font-medium whitespace-nowrap bg-white dark:bg-gray-900 px-2 py-1 rounded shadow-sm">
+              Vault API
+            </div>
+          </div>
+
+          {/* Arrow 2: VSO → K8s Secret (between columns 2 and 3) */}
+          <div className="absolute top-1/2 left-2/4 transform -translate-y-1/2 translate-x-4 flex flex-col items-center">
+            <div className="flex items-center mb-2">
+              <div className="w-12 h-0.5 bg-green-500 dark:bg-green-400"></div>
+              <div className="w-0 h-0 border-l-[10px] border-l-green-500 dark:border-l-green-400 border-y-[5px] border-y-transparent"></div>
+            </div>
+            <div className="text-xs text-green-600 dark:text-green-400 font-medium whitespace-nowrap bg-white dark:bg-gray-900 px-2 py-1 rounded shadow-sm">
+              K8s API
+            </div>
+          </div>
+
+          {/* Arrow 3: K8s Secret → App (between columns 3 and 4) */}
+          <div className="absolute top-1/2 left-3/4 transform -translate-y-1/2 translate-x-4 flex flex-col items-center">
+            <div className="flex items-center mb-2">
+              <div className="w-12 h-0.5 bg-purple-500 dark:bg-purple-400"></div>
+              <div className="w-0 h-0 border-l-[10px] border-l-purple-500 dark:border-l-purple-400 border-y-[5px] border-y-transparent"></div>
+            </div>
+            <div className="text-xs text-purple-600 dark:text-purple-400 font-medium whitespace-nowrap bg-white dark:bg-gray-900 px-2 py-1 rounded shadow-sm">
+              File System
+            </div>
+          </div>
         </div>
 
         {/* Mobile Connection Indicators */}
