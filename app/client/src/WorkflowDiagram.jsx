@@ -11,6 +11,110 @@ export default function WorkflowDiagram() {
     }));
   };
 
+  // Enhanced syntax highlighting function
+  const highlightLine = (line, stepId) => {
+    if (!line.trim()) return <span>&nbsp;</span>;
+    
+    // Track if we've already highlighted this line
+    let highlightedLine = line;
+    const tokens = [];
+    let currentPos = 0;
+    
+    // Define patterns for different types of content
+    const patterns = [
+      // Comments (highest priority)
+      { regex: /(#[^\n]*)/g, className: 'text-green-400 italic' },
+      // YAML/JSON keys (improved pattern for nested keys)
+      { regex: /^(\s*)([a-zA-Z_][a-zA-Z0-9_-]*)\s*:/g, className: 'text-blue-300 font-medium', keepIndent: true },
+      // YAML values after colon
+      { regex: /:\s+([^\s#]+)/g, className: 'text-yellow-300', group: 1 },
+      // Strings in quotes
+      { regex: /("[^"]*")/g, className: 'text-yellow-300' },
+      // Shell commands and YAML keywords
+      { regex: /\b(vault|kubectl|apiVersion|kind|metadata|spec|mount|type|name|namespace|vaultAuthRef|path|destination|create|refreshAfter|kv-v2|sources|secret|projected|volumeMounts|mountPath|readOnly|containers|template)\b/g, className: 'text-purple-400 font-semibold' },
+      // JavaScript keywords
+      { regex: /\b(function|const|let|var|if|else|return|spawn|setTimeout|useEffect|forEach|require|module|exports)\b/g, className: 'text-pink-400 font-medium' },
+      // Numbers and time values
+      { regex: /\b(\d+[a-zA-Z]*|true|false)\b/g, className: 'text-orange-400' },
+      // Operators
+      { regex: /([=<>!&|+\-*\/])/g, className: 'text-cyan-400' }
+    ];
+    
+    // Find all matches
+    const matches = [];
+    patterns.forEach(pattern => {
+      let match;
+      while ((match = pattern.regex.exec(line)) !== null) {
+        // Handle special cases for YAML keys with indentation
+        if (pattern.keepIndent) {
+          matches.push({
+            start: match.index + match[1].length, // Skip indentation
+            end: match.index + match[1].length + match[2].length,
+            text: match[2],
+            className: pattern.className,
+            fullMatch: match[0]
+          });
+        } else {
+          matches.push({
+            start: match.index,
+            end: match.index + match[0].length,
+            text: pattern.group ? match[pattern.group] : match[1] || match[0],
+            className: pattern.className,
+            fullMatch: match[0]
+          });
+        }
+      }
+    });
+    
+    // Sort matches by position
+    matches.sort((a, b) => a.start - b.start);
+    
+    // Remove overlapping matches (keep the first one)
+    const filteredMatches = [];
+    let lastEnd = 0;
+    matches.forEach(match => {
+      if (match.start >= lastEnd) {
+        filteredMatches.push(match);
+        lastEnd = match.end;
+      }
+    });
+    
+    // Build the JSX elements
+    const elements = [];
+    let currentIndex = 0;
+    
+    filteredMatches.forEach((match, i) => {
+      // Add text before the match
+      if (match.start > currentIndex) {
+        elements.push(
+          <span key={`text-${i}`} className="text-gray-100">
+            {line.substring(currentIndex, match.start)}
+          </span>
+        );
+      }
+      
+      // Add the highlighted match
+      elements.push(
+        <span key={`match-${i}`} className={match.className}>
+          {match.text}
+        </span>
+      );
+      
+      currentIndex = match.end;
+    });
+    
+    // Add remaining text
+    if (currentIndex < line.length) {
+      elements.push(
+        <span key="text-end" className="text-gray-100">
+          {line.substring(currentIndex)}
+        </span>
+      );
+    }
+    
+    return elements.length > 0 ? <>{elements}</> : <span className="text-gray-100">{line}</span>;
+  };
+
   const steps = [
     {
       id: 'vault',
@@ -375,25 +479,91 @@ useEffect(() => {
                   {step.details}
                 </p>
 
-                {/* Code Section */}
-                <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                {/* Modern Code Section with Syntax Highlighting */}
+                <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden shadow-lg">
                   <button
                     onClick={() => toggleCode(step.id)}
-                    className="w-full px-6 py-4 bg-gray-50 dark:bg-gray-700 text-left flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors duration-200"
+                    className="w-full px-6 py-4 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-600 text-left flex items-center justify-between hover:from-gray-100 hover:to-gray-200 dark:hover:from-gray-600 dark:hover:to-gray-500 transition-all duration-300 group"
                   >
-                    <span className="font-medium text-gray-900 dark:text-white">
-                      📝 {step.codeTitle}
-                    </span>
-                    <span className="text-gray-500 dark:text-gray-400">
-                      {showCode[step.id] ? '▼' : '▶'}
-                    </span>
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm group-hover:shadow-md transition-shadow duration-300">
+                        <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                        </svg>
+                      </div>
+                      <span className="font-semibold text-gray-900 dark:text-white">
+                        {step.codeTitle}
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">
+                        {showCode[step.id] ? 'Hide Code' : 'View Code'}
+                      </span>
+                      <div className={`transform transition-transform duration-300 ${showCode[step.id] ? 'rotate-180' : ''}`}>
+                        <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </div>
                   </button>
                   
                   {showCode[step.id] && (
-                    <div className="p-6 bg-gray-900 dark:bg-gray-800">
-                      <pre className="text-sm text-gray-100 dark:text-gray-200 overflow-x-auto">
-                        <code>{step.code}</code>
-                      </pre>
+                    <div className="relative">
+                      {/* Code Header */}
+                      <div className="bg-gray-800 dark:bg-gray-900 px-6 py-3 border-t border-gray-300 dark:border-gray-600">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <div className="flex space-x-1">
+                              <div className="w-3 h-3 bg-red-400 rounded-full"></div>
+                              <div className="w-3 h-3 bg-yellow-400 rounded-full"></div>
+                              <div className="w-3 h-3 bg-green-400 rounded-full"></div>
+                            </div>
+                            <span className="text-gray-400 text-sm font-mono ml-4">
+                              {step.id === 'vault' ? 'vault-commands.sh' :
+                               step.id === 'vso' ? 'vault-static-secret.yaml' :
+                               step.id === 'k8s-secret' ? 'deployment.yaml' :
+                               'server.js'}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => navigator.clipboard.writeText(step.code)}
+                            className="flex items-center space-x-1 text-gray-400 hover:text-white transition-colors duration-200 text-sm"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            <span>Copy</span>
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* Enhanced Code Block with Syntax Highlighting */}
+                      <div className="bg-gray-900 dark:bg-black p-6 overflow-x-auto">
+                        <pre className="text-sm leading-relaxed text-gray-100">
+                          <code className="language-text">
+                            {step.code.split('\n').map((line, index) => (
+                              <div key={index} className="block">
+                                {highlightLine(line, step.id)}
+                              </div>
+                            ))}
+                          </code>
+                        </pre>
+                      </div>
+                      
+                      {/* Code Footer */}
+                      <div className="bg-gray-800 dark:bg-gray-900 px-6 py-2 border-t border-gray-700">
+                        <div className="flex items-center justify-between text-xs text-gray-400">
+                          <span>
+                            {step.code.split('\n').length} lines
+                          </span>
+                          <span>
+                            {step.id === 'vault' ? 'Shell Script' :
+                             step.id === 'vso' ? 'Kubernetes YAML' :
+                             step.id === 'k8s-secret' ? 'Kubernetes YAML' :
+                             'JavaScript/Node.js'}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
