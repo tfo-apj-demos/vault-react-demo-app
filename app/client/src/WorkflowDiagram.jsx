@@ -15,113 +15,152 @@ export default function WorkflowDiagram() {
   const highlightLine = (line, stepId) => {
     if (!line.trim()) return <span>&nbsp;</span>;
     
-    // Track if we've already highlighted this line
-    let highlightedLine = line;
-    const tokens = [];
-    let currentPos = 0;
+    // Special handling for YAML syntax highlighting
+    const highlightYamlLine = (line) => {
+      const elements = [];
+      
+      // Check if this is a YAML key line (starts with optional spaces, then word, then colon)
+      const yamlKeyMatch = line.match(/^(\s*)([a-zA-Z_][a-zA-Z0-9_-]*)\s*(:)(.*)$/);
+      if (yamlKeyMatch) {
+        const [, indent, key, colon, rest] = yamlKeyMatch;
+        
+        // Add indentation
+        if (indent) {
+          elements.push(<span key="indent" className="text-gray-100">{indent}</span>);
+        }
+        
+        // Add highlighted key + colon
+        elements.push(<span key="key" className="text-blue-300 font-medium">{key}{colon}</span>);
+        
+        // Process the rest of the line for values and comments
+        if (rest) {
+          const restHighlighted = highlightRestOfLine(rest);
+          elements.push(restHighlighted);
+        }
+        
+        return <>{elements}</>;
+      }
+      
+      // If not a YAML key line, use the general highlighting
+      return highlightGeneralLine(line);
+    };
     
-    // Define patterns for different types of content
-    const patterns = [
-      // Comments (highest priority)
-      { regex: /(#[^\n]*)/g, className: 'text-green-400 italic' },
-      // Strings in quotes (high priority to avoid conflicts)
-      { regex: /("[^"]*")/g, className: 'text-yellow-300' },
-      // YAML keys with colon (keep the colon visible)
-      { regex: /^(\s*)([a-zA-Z_][a-zA-Z0-9_-]*)\s*(:)/g, className: 'text-blue-300 font-medium', keepIndent: true, includeColon: true },
-      // YAML values after colon (but not comments)
-      { regex: /:\s+([^#\n]+?)(?=\s*#|$)/g, className: 'text-yellow-300', group: 1 },
-      // Shell commands and YAML keywords
-      { regex: /\b(vault|kubectl|apiVersion|kind|metadata|spec|mount|type|name|namespace|vaultAuthRef|path|destination|create|refreshAfter|kv-v2|sources|secret|projected|volumeMounts|mountPath|readOnly|containers|template)\b/g, className: 'text-purple-400 font-semibold' },
-      // JavaScript keywords
-      { regex: /\b(function|const|let|var|if|else|return|spawn|setTimeout|useEffect|forEach|require|module|exports)\b/g, className: 'text-pink-400 font-medium' },
-      // Numbers and time values
-      { regex: /\b(\d+[a-zA-Z]*|true|false)\b/g, className: 'text-orange-400' },
-      // Operators (but not colons in YAML)
-      { regex: /([=<>!&|+\-*\/])/g, className: 'text-cyan-400' }
-    ];
-    
-    // Find all matches
-    const matches = [];
-    patterns.forEach(pattern => {
-      let match;
-      while ((match = pattern.regex.exec(line)) !== null) {
-        // Handle special cases for YAML keys with indentation and colon
-        if (pattern.keepIndent && pattern.includeColon) {
-          // Include both the key and the colon, but skip indentation
-          matches.push({
-            start: match.index + match[1].length, // Skip indentation
-            end: match.index + match[1].length + match[2].length + match[3].length, // Include key + colon
-            text: match[2] + match[3], // key + colon
-            className: pattern.className,
-            fullMatch: match[0]
-          });
-        } else if (pattern.keepIndent) {
-          matches.push({
-            start: match.index + match[1].length, // Skip indentation
-            end: match.index + match[1].length + match[2].length,
-            text: match[2],
-            className: pattern.className,
-            fullMatch: match[0]
-          });
+    // Function to highlight values and comments after YAML key
+    const highlightRestOfLine = (text) => {
+      const elements = [];
+      let remaining = text;
+      
+      // Check for comments
+      const commentMatch = remaining.match(/^(.*?)(#.*)$/);
+      if (commentMatch) {
+        const [, beforeComment, comment] = commentMatch;
+        if (beforeComment.trim()) {
+          elements.push(<span key="value" className="text-yellow-300">{beforeComment}</span>);
+        }
+        elements.push(<span key="comment" className="text-green-400 italic">{comment}</span>);
+      } else {
+        // No comment, just highlight as value
+        if (remaining.trim()) {
+          elements.push(<span key="value" className="text-yellow-300">{remaining}</span>);
         } else {
+          elements.push(<span key="space" className="text-gray-100">{remaining}</span>);
+        }
+      }
+      
+      return <>{elements}</>;
+    };
+    
+    // Function for general line highlighting (non-YAML keys)
+    const highlightGeneralLine = (line) => {
+      let highlightedLine = line;
+      const tokens = [];
+      let currentPos = 0;
+      
+      // Define patterns for different types of content
+      const patterns = [
+        // Comments (highest priority)
+        { regex: /(#[^\n]*)/g, className: 'text-green-400 italic' },
+        // Strings in quotes
+        { regex: /("[^"]*")/g, className: 'text-yellow-300' },
+        // Shell commands and YAML keywords
+        { regex: /\b(vault|kubectl|apiVersion|kind|metadata|spec|mount|type|name|namespace|vaultAuthRef|path|destination|create|refreshAfter|kv-v2|sources|secret|projected|volumeMounts|mountPath|readOnly|containers|template|env|value|volumes)\b/g, className: 'text-purple-400 font-semibold' },
+        // JavaScript keywords
+        { regex: /\b(function|const|let|var|if|else|return|spawn|setTimeout|useEffect|forEach|require|module|exports)\b/g, className: 'text-pink-400 font-medium' },
+        // Numbers and boolean values
+        { regex: /\b(\d+[a-zA-Z]*|true|false)\b/g, className: 'text-orange-400' },
+        // Operators
+        { regex: /([=<>!&|+\-*\/])/g, className: 'text-cyan-400' }
+      ];
+      
+      // Find all matches
+      const matches = [];
+      patterns.forEach(pattern => {
+        // Reset regex lastIndex for each line
+        pattern.regex.lastIndex = 0;
+        let match;
+        while ((match = pattern.regex.exec(line)) !== null) {
           matches.push({
             start: match.index,
             end: match.index + match[0].length,
-            text: pattern.group ? match[pattern.group] : match[1] || match[0],
-            className: pattern.className,
-            fullMatch: match[0]
+            text: match[1] || match[0],
+            className: pattern.className
           });
+          
+          // Prevent infinite loop
+          if (match.index === pattern.regex.lastIndex) {
+            pattern.regex.lastIndex++;
+          }
         }
-      }
-    });
-    
-    // Sort matches by position
-    matches.sort((a, b) => a.start - b.start);
-    
-    // Remove overlapping matches (keep the first one)
-    const filteredMatches = [];
-    let lastEnd = 0;
-    matches.forEach(match => {
-      if (match.start >= lastEnd) {
-        filteredMatches.push(match);
-        lastEnd = match.end;
-      }
-    });
-    
-    // Build the JSX elements
-    const elements = [];
-    let currentIndex = 0;
-    
-    filteredMatches.forEach((match, i) => {
-      // Add text before the match
-      if (match.start > currentIndex) {
+      });
+      
+      // Sort matches by position and remove overlaps
+      matches.sort((a, b) => a.start - b.start);
+      const filteredMatches = [];
+      let lastEnd = 0;
+      matches.forEach(match => {
+        if (match.start >= lastEnd) {
+          filteredMatches.push(match);
+          lastEnd = match.end;
+        }
+      });
+      
+      // Build JSX elements
+      const elements = [];
+      let currentIndex = 0;
+      
+      filteredMatches.forEach((match, i) => {
+        // Add text before the match
+        if (match.start > currentIndex) {
+          elements.push(
+            <span key={`text-${i}`} className="text-gray-100">
+              {line.substring(currentIndex, match.start)}
+            </span>
+          );
+        }
+        
+        // Add the highlighted match
         elements.push(
-          <span key={`text-${i}`} className="text-gray-100">
-            {line.substring(currentIndex, match.start)}
+          <span key={`match-${i}`} className={match.className}>
+            {match.text}
+          </span>
+        );
+        
+        currentIndex = match.end;
+      });
+      
+      // Add remaining text
+      if (currentIndex < line.length) {
+        elements.push(
+          <span key="text-end" className="text-gray-100">
+            {line.substring(currentIndex)}
           </span>
         );
       }
       
-      // Add the highlighted match
-      elements.push(
-        <span key={`match-${i}`} className={match.className}>
-          {match.text}
-        </span>
-      );
-      
-      currentIndex = match.end;
-    });
+      return elements.length > 0 ? <>{elements}</> : <span className="text-gray-100">{line}</span>;
+    };
     
-    // Add remaining text
-    if (currentIndex < line.length) {
-      elements.push(
-        <span key="text-end" className="text-gray-100">
-          {line.substring(currentIndex)}
-        </span>
-      );
-    }
-    
-    return elements.length > 0 ? <>{elements}</> : <span className="text-gray-100">{line}</span>;
+    return highlightYamlLine(line);
   };
 
   const steps = [
