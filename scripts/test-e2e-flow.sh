@@ -10,9 +10,9 @@ NAMESPACE="vault-live-secrets-demo"
 DEPLOYMENT="vault-live-secrets-demo"
 SECRET_NAME="vault-web-secrets"
 APP_URL="https://vault-live-secrets-demo-vault-live-secrets-demo.apps.openshift-01.hashicorp.local"
-TEST_VALUE="frozen$(date +%s)"  # Unique test value with timestamp
+TEST_VALUE="frozen-$(date +'%m/%Y')"  # Unique test value with timestamp
 VAULT_PATH="secrets/dev"
-VAULT_KEY="somethingnew"
+VAULT_KEY="favourite-movie"
 
 # Colors for output
 RED='\033[0;31m'
